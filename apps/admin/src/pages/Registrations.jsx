@@ -9,14 +9,10 @@ import { Download } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
+import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
 
 export default function Registrations() {
   const toast = useToast();
-  const [registrations, setRegistrations] = useState([]);
-  const [filteredRegs, setFilteredRegs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -27,33 +23,20 @@ export default function Registrations() {
   const [detailsError, setDetailsError] = useState(null);
   const [correctionReason, setCorrectionReason] = useState('');
 
-  useEffect(() => {
-    fetchRegistrations();
-  }, []);
+  const { data: registrations, loading, error, refresh } = useFirebaseData('admin_registrations', async () => {
+    const q = query(collection(db, 'registrations'), orderBy('createdAt', 'desc'), limit(100));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  });
 
   useEffect(() => {
-    filterData();
-  }, [registrations, statusFilter, searchTerm]);
-
-  async function fetchRegistrations() {
-    setLoading(true);
-    setError(null);
-    try {
-      // Use limit to avoid massive collection reads
-      const q = query(collection(db, 'registrations'), orderBy('createdAt', 'desc'), limit(100));
-      const snap = await getDocs(q);
-      const regs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setRegistrations(regs);
-    } catch (err) {
-      console.error("Error fetching registrations:", err);
-      setError(err);
-      toast.error('Failed to load registrations', normalizeError(err));
-    } finally {
-      setLoading(false);
+    if (error) {
+      toast.error('Failed to load registrations', normalizeError(error));
     }
-  }
+  }, [error, toast]);
 
-  function filterData() {
+  const filteredRegs = React.useMemo(() => {
+    if (!registrations) return [];
     let result = [...registrations];
     if (statusFilter !== 'ALL') {
       result = result.filter(r => r.status === statusFilter || r.verificationStatus === statusFilter);
@@ -66,8 +49,8 @@ export default function Registrations() {
         (r.type && r.type.toLowerCase().includes(term))
       );
     }
-    setFilteredRegs(result);
-  }
+    return result;
+  }, [registrations, statusFilter, searchTerm]);
 
   async function handleRowClick(reg) {
     setSelectedReg(reg);
@@ -116,7 +99,7 @@ export default function Registrations() {
       await approveFn({ registrationId: selectedReg.id });
       toast.update(toastId, 'success', 'Approved successfully.');
       setSelectedReg(null);
-      fetchRegistrations();
+      refresh();
     } catch (err) {
       console.error(err);
       toast.update(toastId, 'error', 'Error approving', normalizeError(err));
@@ -138,7 +121,7 @@ export default function Registrations() {
       await correctionFn({ registrationId: selectedReg.id, reason: correctionReason });
       toast.update(toastId, 'success', 'Correction requested.');
       setSelectedReg(null);
-      fetchRegistrations();
+      refresh();
     } catch (err) {
       console.error(err);
       toast.update(toastId, 'error', 'Error requesting correction', normalizeError(err));
@@ -168,7 +151,7 @@ export default function Registrations() {
         title="Registrations" 
         description="Manage participant registrations and verification workflow." 
         actions={
-          <button className="btn btn-secondary" onClick={fetchRegistrations}>
+          <button className="btn btn-secondary" onClick={refresh}>
             <Download size={16} /> Export Recent
           </button>
         }

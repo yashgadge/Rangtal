@@ -7,12 +7,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { CheckSquare, Check, X, FileText, Download, AlertCircle } from 'lucide-react';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
+import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
 
 export default function Verification() {
   const toast = useToast();
-  const [registrations, setRegistrations] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   
   const [selectedReg, setSelectedReg] = useState(null);
   const [participants, setParticipants] = useState([]);
@@ -23,37 +21,30 @@ export default function Verification() {
 
   const [activeTab, setActiveTab] = useState('VERIFICATION_PENDING');
 
-  useEffect(() => {
-    fetchQueue();
-  }, [activeTab]);
-
-  async function fetchQueue() {
-    setLoading(true);
-    setError(null);
-    setSelectedReg(null);
-    try {
-      let statuses = [activeTab];
-      if (activeTab === 'VERIFICATION_PENDING') {
-        statuses = ['VERIFICATION_PENDING', 'SUBMITTED'];
-      }
-      
-      const q = query(collection(db, 'registrations'), where('status', 'in', statuses), limit(50));
-      const snap = await getDocs(q);
-      // Sort client side to avoid missing index errors for now, although prod should use index
-      const regs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
-      setRegistrations(regs);
-      
-      if (regs.length > 0) {
-        handleSelectRegistration(regs[0]);
-      }
-    } catch (err) {
-      console.error("Error fetching verification queue", err);
-      setError(err);
-      toast.error('Failed to fetch queue', normalizeError(err));
-    } finally {
-      setLoading(false);
+  const { data: registrations = [], loading, error, refresh } = useFirebaseData(`verification_queue_${activeTab}`, async () => {
+    let statuses = [activeTab];
+    if (activeTab === 'VERIFICATION_PENDING') {
+      statuses = ['VERIFICATION_PENDING', 'SUBMITTED'];
     }
-  }
+    
+    const q = query(collection(db, 'registrations'), where('status', 'in', statuses), limit(50));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
+  });
+
+  useEffect(() => {
+    if (registrations.length > 0 && !selectedReg) {
+      handleSelectRegistration(registrations[0]);
+    } else if (registrations.length === 0) {
+      setSelectedReg(null);
+    }
+  }, [registrations, selectedReg]);
+
+  useEffect(() => {
+    if (error) {
+      toast.error('Failed to fetch queue', normalizeError(error));
+    }
+  }, [error, toast]);
 
   async function handleSelectRegistration(reg) {
     setSelectedReg(reg);

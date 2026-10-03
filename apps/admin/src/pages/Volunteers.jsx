@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, getDocs, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -9,13 +9,10 @@ import { motion } from 'framer-motion';
 import { ShieldCheck, Plus, Check } from 'lucide-react';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
+import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
 
 export default function Volunteers() {
   const toast = useToast();
-  const [volunteers, setVolunteers] = useState([]);
-  const [filteredVolunteers, setFilteredVolunteers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -30,37 +27,27 @@ export default function Volunteers() {
     status: 'ACTIVE'
   });
 
-  useEffect(() => {
-    fetchVolunteers();
-  }, []);
+  const { data: volunteers = [], loading, error, refresh } = useFirebaseData('admin_volunteers', async () => {
+    const q = query(collection(db, 'volunteers'));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  });
 
   useEffect(() => {
-    if (searchTerm) {
-      setFilteredVolunteers(volunteers.filter(v => 
-        v.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        v.email?.toLowerCase().includes(searchTerm.toLowerCase())
-      ));
-    } else {
-      setFilteredVolunteers(volunteers);
+    if (error) {
+      toast.error('Failed to load volunteers', normalizeError(error));
     }
+  }, [error, toast]);
+
+  const filteredVolunteers = useMemo(() => {
+    if (!volunteers) return [];
+    if (!searchTerm) return volunteers;
+    const term = searchTerm.toLowerCase();
+    return volunteers.filter(v => 
+      v.name?.toLowerCase().includes(term) || 
+      v.email?.toLowerCase().includes(term)
+    );
   }, [volunteers, searchTerm]);
-
-  async function fetchVolunteers() {
-    setLoading(true);
-    setError(null);
-    try {
-      const q = query(collection(db, 'volunteers'));
-      const snap = await getDocs(q);
-      const vols = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setVolunteers(vols);
-    } catch (err) {
-      console.error("Error fetching volunteers", err);
-      setError(err);
-      toast.error('Failed to load volunteers', normalizeError(err));
-    } finally {
-      setLoading(false);
-    }
-  }
 
   function handleRowClick(vol) {
     setSelectedVolunteer(vol);
@@ -95,7 +82,7 @@ export default function Volunteers() {
       await createVolunteer(payload);
       
       setIsEditing(false);
-      fetchVolunteers();
+      refresh();
       toast.update(toastId, 'success', 'Volunteer created successfully');
     } catch (err) {
       console.error("Error creating volunteer", err);
@@ -115,7 +102,7 @@ export default function Volunteers() {
         disabled: vol.status === 'ACTIVE'
       });
       
-      fetchVolunteers();
+      refresh();
       if (selectedVolunteer?.id === vol.id) {
          setSelectedVolunteer({...vol, status: vol.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'});
       }

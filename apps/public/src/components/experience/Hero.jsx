@@ -53,8 +53,8 @@ export default function Hero() {
       >
         <motion.div variants={itemVariants} className="hero-top" style={{ textAlign: 'center', marginBottom: '2rem' }}>
           {settings.REGISTRATION?.requireCollegeId && (
-            <div className="hero-tagline" style={{ letterSpacing: '8px', color: 'var(--color-orange)', fontSize: '0.9rem', fontWeight: 600, textTransform: 'uppercase' }}>
-              EXCLUSIVE FOR STUDENTS
+            <div className="hero-tagline" style={{ letterSpacing: '4px', fontSize: '0.9rem', fontWeight: 800, textTransform: 'uppercase' }}>
+              ONLY FOR JSPM STUDENTS
             </div>
           )}
           <div className="hero-subtitle" style={{ letterSpacing: '4px', marginTop: '1rem', color: 'var(--text-secondary)' }}>THE BIGGEST GARBA MAHOTSAV</div>

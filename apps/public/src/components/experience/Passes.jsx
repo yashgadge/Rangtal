@@ -5,9 +5,9 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import './Scenes.css';
 
-const DandiyaIcon = () => (
-  <div className="dandiya-wrapper">
-    <svg width="60" height="60" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="dandiya-icon">
+const DandiyaIcon = ({ size = 60, className = '' }) => (
+  <div className={className} style={{ width: size, height: size, display: 'inline-block' }}>
+    <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="dandiya-icon">
       <path d="M25 75 L75 25" stroke="url(#goldGradient)" strokeWidth="8" strokeLinecap="round" />
       <path d="M25 25 L75 75" stroke="url(#goldGradient)" strokeWidth="8" strokeLinecap="round" />
       <circle cx="25" cy="75" r="6" fill="#FF6B00" />
@@ -96,23 +96,27 @@ export default function Passes() {
               }}>
                 <div style={{ position: 'absolute', top: 0, right: 0, width: '100px', height: '100px', background: 'radial-gradient(circle, rgba(255, 215, 0, 0.15), transparent 70%)', filter: 'blur(30px)' }} />
                 
+                {/* Corner Dandiyas */}
+                <div style={{ position: 'absolute', top: 15, left: 15, opacity: 0.6 }} className="pass-decor-tl"><DandiyaIcon size={24} /></div>
+                <div style={{ position: 'absolute', bottom: 15, right: 15, opacity: 0.6 }} className="pass-decor-br"><DandiyaIcon size={24} /></div>
+
                 {isPopular && (
-                  <div style={{ position: 'absolute', top: '15px', right: '-35px', background: 'var(--color-gold)', color: 'black', padding: '0.25rem 3rem', transform: 'rotate(45deg)', fontSize: '0.75rem', fontWeight: 800, letterSpacing: '1px', boxShadow: '0 2px 10px rgba(0,0,0,0.5)' }}>POPULAR</div>
+                  <div style={{ position: 'absolute', top: '15px', right: '-35px', background: 'var(--color-gold)', color: 'black', padding: '0.25rem 3rem', transform: 'rotate(45deg)', fontSize: '0.75rem', fontWeight: 800, letterSpacing: '1px', boxShadow: '0 2px 10px rgba(0,0,0,0.5)', zIndex: 10 }}>POPULAR</div>
                 )}
                 
-                <h3 style={{ fontSize: '1.25rem', marginTop: '0.5rem', color: 'white', letterSpacing: '1px', textTransform: 'uppercase' }}>{pkg.name}</h3>
+                <h3 style={{ fontSize: '1.25rem', marginTop: '1rem', color: 'white', letterSpacing: '1px', textTransform: 'uppercase', position: 'relative', zIndex: 2 }}>{pkg.name}</h3>
                 
-                <div className="price" style={{ fontSize: '3rem', fontWeight: 800, background: isPopular ? 'linear-gradient(to right, var(--color-gold), var(--color-orange))' : 'none', color: isPopular ? 'transparent' : 'white', WebkitBackgroundClip: isPopular ? 'text' : 'border-box', margin: '1rem 0' }}>
+                <div className="price" style={{ fontSize: '3rem', fontWeight: 800, background: isPopular ? 'linear-gradient(to right, var(--color-gold), var(--color-orange))' : 'none', color: isPopular ? 'transparent' : 'white', WebkitBackgroundClip: isPopular ? 'text' : 'border-box', margin: '1rem 0', position: 'relative', zIndex: 2 }}>
                   ₹{pkg.price}
                 </div>
                 
                 <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '1.5rem 0' }}></div>
                 
-                <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem', minHeight: '60px' }}>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem', minHeight: '60px', position: 'relative', zIndex: 2 }}>
                   {pkg.description}
                 </div>
 
-                <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 2rem 0', color: 'var(--text-secondary)', fontSize: '0.95rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 2rem 0', color: 'var(--text-secondary)', fontSize: '0.95rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', position: 'relative', zIndex: 2 }}>
                   <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                     <span style={{ color: 'var(--color-gold)' }}>✓</span> {pkg.participantCount} Participant{pkg.participantCount > 1 ? 's' : ''} Entry
                   </li>
@@ -122,7 +126,7 @@ export default function Passes() {
                 </ul>
                 
                 <motion.button 
-                  whileHover={{ scale: 1.05 }} 
+                  whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(255, 215, 0, 0.4)' }} 
                   whileTap={{ scale: 0.95 }} 
                   onClick={() => navigate('/register')} 
                   style={{ 
@@ -135,7 +139,9 @@ export default function Passes() {
                     borderRadius: '12px', 
                     fontSize: '1rem', 
                     cursor: 'pointer',
-                    textTransform: 'uppercase'
+                    textTransform: 'uppercase',
+                    position: 'relative',
+                    zIndex: 2
                   }}
                 >
                   Buy {pkg.name}

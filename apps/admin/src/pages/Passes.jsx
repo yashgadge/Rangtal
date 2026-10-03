@@ -8,57 +8,43 @@ import { motion } from 'framer-motion';
 import { Ticket, Download, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
+import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
 
 export default function Passes() {
   const toast = useToast();
-  const [passes, setPasses] = useState([]);
-  const [filteredPasses, setFilteredPasses] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPass, setSelectedPass] = useState(null);
 
-  useEffect(() => {
-    fetchPasses();
-  }, []);
+  const { data: passes, loading, error, refresh } = useFirebaseData('admin_passes', async () => {
+    const q = query(collection(db, 'passes'), orderBy('createdAt', 'desc'), limit(100));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  });
 
   useEffect(() => {
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      setFilteredPasses(passes.filter(p => 
-        p.id.toLowerCase().includes(term) || 
-        (p.participantName && p.participantName.toLowerCase().includes(term)) ||
-        (p.registrationId && p.registrationId.toLowerCase().includes(term))
-      ));
-    } else {
-      setFilteredPasses(passes);
+    if (error) {
+      toast.error('Failed to load passes', normalizeError(error));
     }
+  }, [error, toast]);
+
+  const filteredPasses = React.useMemo(() => {
+    if (!passes) return [];
+    if (!searchTerm) return passes;
+    
+    const term = searchTerm.toLowerCase();
+    return passes.filter(p => 
+      p.id.toLowerCase().includes(term) || 
+      (p.participantName && p.participantName.toLowerCase().includes(term)) ||
+      (p.registrationId && p.registrationId.toLowerCase().includes(term))
+    );
   }, [passes, searchTerm]);
-
-  async function fetchPasses() {
-    setLoading(true);
-    setError(null);
-    try {
-      const q = query(collection(db, 'passes'), orderBy('createdAt', 'desc'), limit(100));
-      const snap = await getDocs(q);
-      const pData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setPasses(pData);
-    } catch (err) {
-      console.error("Error fetching passes", err);
-      setError(err);
-      toast.error('Failed to load passes', normalizeError(err));
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleRevoke(passId) {
     if (!window.confirm("Are you sure you want to revoke this pass? It will no longer be scannable.")) return;
     const toastId = toast.loading('Revoking pass...');
     try {
       await updateDoc(doc(db, 'passes', passId), { status: 'REVOKED' });
-      fetchPasses();
+      refresh();
       if(selectedPass?.id === passId) {
          setSelectedPass({...selectedPass, status: 'REVOKED'});
       }
@@ -91,7 +77,7 @@ export default function Passes() {
         title="Pass Management" 
         description="Monitor issued digital passes and their status." 
         actions={
-          <button className="btn btn-secondary" onClick={fetchPasses}>
+          <button className="btn btn-secondary" onClick={refresh}>
             <Download size={16} /> Export Recent
           </button>
         }

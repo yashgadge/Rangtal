@@ -1,8 +1,8 @@
 const { initializeApp } = require("firebase-admin/app");
 const { setGlobalOptions } = require("firebase-functions/v2");
 
-// Fix container timeout by increasing memory
-setGlobalOptions({ maxInstances: 10, memory: "512MiB", timeoutSeconds: 60 });
+// Fix container timeout by increasing memory and allow public invocations
+setGlobalOptions({ maxInstances: 10, memory: "512MiB", timeoutSeconds: 60, invoker: "public" });
 
 // Initialize Firebase Admin once
 initializeApp();

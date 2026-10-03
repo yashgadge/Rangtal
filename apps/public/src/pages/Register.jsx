@@ -8,21 +8,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ChevronRight, Upload, AlertCircle, Package, User, Building, FileText, CheckCircle2 } from 'lucide-react';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
+import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
+import Stepper, { Step } from '../components/Stepper/Stepper.jsx';
 import './Register.css';
-
-const STEPS = [
-  { id: 1, label: 'Package', icon: Package },
-  { id: 2, label: 'Profiles', icon: User },
-  { id: 3, label: 'Review', icon: CheckCircle2 },
-  { id: 4, label: 'Documents', icon: FileText },
-];
 
 export default function Register() {
   const toast = useToast();
   const [user, setUser] = useState(null);
-  const [packages, setPackages] = useState([]);
-  const [colleges, setColleges] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // Form State
   const [step, setStep] = useState(1);
@@ -39,34 +32,30 @@ export default function Register() {
   const [submitting, setSubmitting] = useState(false);
   const [registrationResult, setRegistrationResult] = useState(null);
   const [error, setError] = useState(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      if (currentUser) {
-        loadData();
-      } else {
-        setLoading(false);
-      }
+      setAuthLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  async function loadData() {
-    setLoading(true);
-    try {
-      const pkgSnap = await getDocs(query(collection(db, 'packages'), where('active', '==', true)));
-      const colSnap = await getDocs(query(collection(db, 'colleges'), where('verified', '==', true)));
-      
-      setPackages(pkgSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      setColleges(colSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    } catch (err) {
-      console.error("Error loading registration data", err);
-      toast.error('Data Load Failed', normalizeError(err));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const { data: packages, loading: pkgsLoading, error: pkgsError } = useFirebaseData('packages_active', async () => {
+    const snap = await getDocs(query(collection(db, 'packages'), where('active', '==', true)));
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }, { enabled: !!user });
+
+  const { data: colleges, loading: colLoading, error: colError } = useFirebaseData('colleges_verified', async () => {
+    const snap = await getDocs(query(collection(db, 'colleges'), where('verified', '==', true)));
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }, { enabled: !!user });
+
+  useEffect(() => {
+    if (pkgsError) toast.error('Packages Load Failed', normalizeError(pkgsError));
+    if (colError) toast.error('Colleges Load Failed', normalizeError(colError));
+  }, [pkgsError, colError]);
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -186,34 +175,10 @@ export default function Register() {
     }
   };
 
-  const renderStepIndicator = () => (
-    <div className="step-indicator">
-      {STEPS.map((s, i) => {
-        const isActive = s.id === step;
-        const isCompleted = s.id < step;
-        const Icon = s.icon;
-        
-        return (
-          <div key={s.id} className="step-item">
-            <div className={`step-circle ${isActive ? 'active' : isCompleted ? 'completed' : ''}`}>
-              {isCompleted ? <Check size={16} /> : <Icon size={16} />}
-            </div>
-            <span className={`step-label ${isActive || isCompleted ? 'active-text' : ''}`}>{s.label}</span>
-            {i < STEPS.length - 1 && <div className={`step-line ${isCompleted ? 'completed-line' : ''}`} />}
-          </div>
-        );
-      })}
-    </div>
-  );
 
-  const pageTransition = {
-    initial: { opacity: 0, x: 20 },
-    animate: { opacity: 1, x: 0 },
-    exit: { opacity: 0, x: -20 },
-    transition: { duration: 0.3 }
-  };
 
-  if (loading) {
+
+  if (authLoading) {
     return (
       <div className="register-page app-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <motion.div animate={{ opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1.5 }} style={{ color: 'var(--color-gold)', fontFamily: 'var(--font-heading)', fontSize: '2rem', letterSpacing: '4px' }}>
@@ -249,16 +214,30 @@ export default function Register() {
             <button onClick={() => { signOut(auth); toast.info('Signed out'); }} className="logout-btn">Cancel</button>
           </div>
           
-          {step < 5 && renderStepIndicator()}
-
-          <div style={{ position: 'relative', minHeight: '400px' }}>
-            <AnimatePresence mode="wait">
-              {step === 1 && (
-                <motion.div key="step1" {...pageTransition}>
+          {step < 5 ? (
+            <Stepper 
+              step={step} 
+              onStepChange={setStep} 
+              showFooter={false}
+              disableStepIndicators={true}
+              stepCircleContainerClassName="register-stepper-wrapper"
+              style={{ padding: 0 }}
+            >
+              <Step>
+                <div>
                   <h2 className="text-subtitle">Select a Package</h2>
-                  {packages.length === 0 ? (
-                    <p className="text-body">No packages are currently available.</p>
-                  ) : (
+                  {pkgsLoading ? (
+                    <div className="grid-2" style={{ marginTop: '2rem' }}>
+                      {[1, 2, 3, 4].map((i) => (
+                        <div key={i} style={{ background: 'rgba(255,255,255,0.03)', padding: '2rem', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', animation: 'pulse 1.5s infinite ease-in-out' }}>
+                          <div style={{ height: '24px', width: '60%', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', marginBottom: '1rem' }} />
+                          <div style={{ height: '40px', width: '40%', background: 'rgba(255,255,255,0.1)', borderRadius: '8px', marginBottom: '1rem' }} />
+                          <div style={{ height: '14px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', marginBottom: '0.5rem' }} />
+                          <div style={{ height: '14px', width: '80%', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }} />
+                        </div>
+                      ))}
+                    </div>
+                  ) : packages && packages.length > 0 ? (
                     <div className="grid-2" style={{ marginTop: '2rem' }}>
                       {packages.map(pkg => (
                         <div 
@@ -284,6 +263,8 @@ export default function Register() {
                         </div>
                       ))}
                     </div>
+                  ) : (
+                    <p className="text-body" style={{ marginTop: '2rem' }}>No packages are currently available.</p>
                   )}
 
                   <div className="btn-row btn-row-right">
@@ -291,11 +272,11 @@ export default function Register() {
                       Continue <ChevronRight size={18} />
                     </button>
                   </div>
-                </motion.div>
-              )}
+                </div>
+              </Step>
 
-              {step === 2 && (
-                <motion.div key="step2" {...pageTransition}>
+              <Step>
+                <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <h2 className="text-subtitle" style={{ margin: 0 }}>Participant Details</h2>
                     <div className="badge badge-neutral" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', color: 'var(--color-gold)', background: 'rgba(255,215,0,0.1)' }}>
@@ -318,9 +299,9 @@ export default function Register() {
                         <label className="text-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'white' }}>
                           <Building size={16} color="var(--color-gold)" /> Select Your College
                         </label>
-                        <select className="form-select" value={selectedCollege} onChange={(e) => setSelectedCollege(e.target.value)} style={{ marginTop: '1rem', padding: '1rem', fontSize: '1rem' }}>
-                          <option value="" disabled>Select College / Institution...</option>
-                          {colleges.map(c => (
+                        <select disabled={colLoading} className="form-select" value={selectedCollege} onChange={(e) => setSelectedCollege(e.target.value)} style={{ marginTop: '1rem', padding: '1rem', fontSize: '1rem' }}>
+                          <option value="" disabled>{colLoading ? 'Loading Colleges...' : 'Select College / Institution...'}</option>
+                          {colleges && colleges.map(c => (
                             <option key={c.id} value={c.id}>{c.name}</option>
                           ))}
                         </select>
@@ -332,11 +313,11 @@ export default function Register() {
                     <h3 style={{ fontSize: '1.25rem', marginBottom: '1.5rem', color: 'var(--color-gold)' }}>Profile Information</h3>
                     <div className="form-group">
                       <label className="text-label">Full Name</label>
-                      <input type="text" className="form-input" value={participants[currentParticipantIndex].fullName} onChange={(e) => handleParticipantChange('fullName', e.target.value)} placeholder="As per ID" />
+                      <input type="text" className="form-input" value={participants[currentParticipantIndex]?.fullName || ''} onChange={(e) => handleParticipantChange('fullName', e.target.value)} placeholder="As per ID" />
                     </div>
                     <div className="form-group">
                       <label className="text-label">Gender</label>
-                      <select className="form-select" value={participants[currentParticipantIndex].gender} onChange={(e) => handleParticipantChange('gender', e.target.value)}>
+                      <select className="form-select" value={participants[currentParticipantIndex]?.gender || ''} onChange={(e) => handleParticipantChange('gender', e.target.value)}>
                         <option value="" disabled>Select...</option>
                         <option value="M">Male</option>
                         <option value="F">Female</option>
@@ -348,18 +329,18 @@ export default function Register() {
                   <div className="btn-row" style={{ marginTop: '2rem' }}>
                     <button onClick={prevParticipant} className="btn-secondary">Back</button>
                     <button 
-                      disabled={(currentParticipantIndex === 0 && !selectedCollege) || !participants[currentParticipantIndex].fullName || !participants[currentParticipantIndex].gender}
+                      disabled={(currentParticipantIndex === 0 && !selectedCollege) || !participants[currentParticipantIndex]?.fullName || !participants[currentParticipantIndex]?.gender}
                       onClick={nextParticipant} 
                       className="btn-primary"
                     >
                       {currentParticipantIndex < participants.length - 1 ? 'Save & Continue' : 'Review Registration'}
                     </button>
                   </div>
-                </motion.div>
-              )}
+                </div>
+              </Step>
 
-              {step === 3 && (
-                <motion.div key="step3" {...pageTransition}>
+              <Step>
+                <div>
                   <h2 className="text-subtitle">Review & Confirm</h2>
                   
                   <div style={{ background: 'rgba(255,255,255,0.03)', padding: '2rem', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '2rem' }}>
@@ -376,7 +357,7 @@ export default function Register() {
 
                     <div style={{ marginBottom: '1.5rem' }}>
                       <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>College</div>
-                      <div style={{ fontSize: '1.1rem' }}>{colleges.find(c => c.id === selectedCollege)?.name}</div>
+                      <div style={{ fontSize: '1.1rem' }}>{colleges?.find(c => c.id === selectedCollege)?.name}</div>
                     </div>
 
                     <div className="grid-2">
@@ -391,10 +372,7 @@ export default function Register() {
                   </div>
 
                   <div className="terms-row" style={{ marginTop: '2rem', marginBottom: '2rem' }}>
-                    <input type="checkbox" id="terms" onChange={(e) => {
-                      const btn = document.getElementById("confirm-btn");
-                      if (btn) btn.disabled = !e.target.checked || submitting;
-                    }} />
+                    <input type="checkbox" id="terms" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} />
                     <label htmlFor="terms" style={{ color: 'var(--text-secondary)' }}>
                       I verify that all information is accurate and matches physical IDs. I agree to the <a href="#" style={{color: 'var(--color-gold)'}}>Terms of Entry</a>.
                     </label>
@@ -404,15 +382,15 @@ export default function Register() {
 
                   <div className="btn-row">
                     <button onClick={() => { setStep(2); setCurrentParticipantIndex(participants.length - 1); }} disabled={submitting} className="btn-secondary">Edit Details</button>
-                    <button id="confirm-btn" className="btn-primary" disabled={true} onClick={handleSubmitRegistration}>
+                    <button className="btn-primary" disabled={!termsAccepted || submitting} onClick={handleSubmitRegistration}>
                       {submitting ? 'Processing...' : 'Confirm Registration'}
                     </button>
                   </div>
-                </motion.div>
-              )}
+                </div>
+              </Step>
 
-              {step === 4 && registrationResult && (
-                <motion.div key="step4" {...pageTransition}>
+              <Step>
+                <div>
                   <h2 className="text-subtitle">ID Verification Upload</h2>
                   <p className="text-body" style={{ marginBottom: '2rem' }}>Please upload clear photos or PDFs of the college ID / Govt ID for all participants.</p>
                   
@@ -444,11 +422,12 @@ export default function Register() {
                       {submitting ? 'Uploading Documents...' : 'Submit Documents'}
                     </button>
                   </div>
-                </motion.div>
-              )}
-
-              {step === 5 && (
-                <motion.div key="step5" {...pageTransition} style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+                </div>
+              </Step>
+            </Stepper>
+          ) : step === 5 ? (
+            <div style={{ position: 'relative', minHeight: '400px' }}>
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} style={{ textAlign: 'center', padding: '4rem 2rem' }}>
                   <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', bounce: 0.5 }}>
                     <CheckCircle2 size={80} color="var(--color-success)" style={{ margin: '0 auto 2rem' }} />
                   </motion.div>
@@ -465,9 +444,8 @@ export default function Register() {
                     Go to Dashboard
                   </button>
                 </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -8,55 +8,37 @@ import { Download } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
+import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
 
 export default function Participants() {
   const toast = useToast();
-  const [participants, setParticipants] = useState([]);
-  const [filteredParts, setFilteredParts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedParticipant, setSelectedParticipant] = useState(null);
 
-  useEffect(() => {
-    fetchParticipants();
-  }, []);
+  const { data, loading, error, refresh } = useFirebaseData('admin_participants', async () => {
+    const q = query(collection(db, 'participants'), limit(100));
+    const snap = await getDocs(q);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  });
 
   useEffect(() => {
-    filterData();
-  }, [participants, searchTerm]);
-
-  async function fetchParticipants() {
-    setLoading(true);
-    setError(null);
-    try {
-      // Ordered by a timestamp ideally, but lacking one, we just limit
-      const q = query(collection(db, 'participants'), limit(100));
-      const snap = await getDocs(q);
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setParticipants(data);
-    } catch (err) {
-      console.error("Error fetching participants", err);
-      setError(err);
-      toast.error('Failed to load participants', normalizeError(err));
-    } finally {
-      setLoading(false);
+    if (error) {
+      toast.error('Failed to load participants', normalizeError(error));
     }
-  }
+  }, [error, toast]);
 
-  function filterData() {
-    let result = [...participants];
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(p => 
-        p.id.toLowerCase().includes(term) || 
-        (p.fullName && p.fullName.toLowerCase().includes(term)) ||
-        (p.registrationId && p.registrationId.toLowerCase().includes(term))
-      );
-    }
-    setFilteredParts(result);
-  }
+  const filteredParts = React.useMemo(() => {
+    if (!data) return [];
+    if (!searchTerm) return data;
+    
+    const term = searchTerm.toLowerCase();
+    return data.filter(p => 
+      p.id.toLowerCase().includes(term) || 
+      (p.fullName && p.fullName.toLowerCase().includes(term)) ||
+      (p.registrationId && p.registrationId.toLowerCase().includes(term))
+    );
+  }, [data, searchTerm]);
 
   function getBadgeColor(status) {
     if (status === 'VERIFIED') return 'badge-success';
@@ -91,7 +73,7 @@ export default function Participants() {
         title="Participants" 
         description="Manage all registered participants." 
         actions={
-          <button className="btn btn-secondary" onClick={fetchParticipants}>
+          <button className="btn btn-secondary" onClick={refresh}>
             <Download size={16} /> Export Recent
           </button>
         }

@@ -5,19 +5,17 @@ import { auth, db } from '../firebase';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { LogOut, Ticket, Clock, CheckCircle2, AlertCircle, FileText, User } from 'lucide-react';
+import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
 import './Account.css';
 
 export default function Account() {
   const [user, setUser] = useState(auth.currentUser);
-  const [registrations, setRegistrations] = useState([]);
-  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        fetchRegistrations(currentUser.uid);
       } else {
         navigate('/');
       }
@@ -25,44 +23,37 @@ export default function Account() {
     return () => unsubscribe();
   }, [navigate]);
 
-  async function fetchRegistrations(uid) {
-    try {
-      setLoading(true);
-      const q = query(collection(db, 'registrations'), where('uid', '==', uid));
-      const snap = await getDocs(q);
-      const regs = [];
-      for (const doc of snap.docs) {
-        const data = doc.data();
-        
-        const pQuery = query(collection(db, 'participants'), where('registrationId', '==', doc.id));
-        const pSnap = await getDocs(pQuery);
-        const participants = pSnap.docs.map(p => ({ id: p.id, ...p.data() }));
+  const { data: registrations, loading, error } = useFirebaseData(`account_regs_${user?.uid}`, async () => {
+    if (!user) return [];
+    
+    // Fetch all related documents in parallel
+    const [regsSnap, partsSnap, passesSnap] = await Promise.all([
+      getDocs(query(collection(db, 'registrations'), where('uid', '==', user.uid))),
+      getDocs(query(collection(db, 'participants'), where('uid', '==', user.uid))),
+      getDocs(query(collection(db, 'passes'), where('uid', '==', user.uid)))
+    ]);
 
-        const passQuery = query(collection(db, 'passes'), where('registrationId', '==', doc.id));
-        const passSnap = await getDocs(passQuery);
-        const passes = passSnap.docs.map(p => ({ id: p.id, ...p.data() }));
+    const allParts = partsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const allPasses = passesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-        regs.push({
-          id: doc.id,
-          ...data,
-          participants,
-          passes
-        });
-      }
-      
-      regs.sort((a, b) => {
-        const t1 = a.createdAt?.toMillis() || 0;
-        const t2 = b.createdAt?.toMillis() || 0;
-        return t2 - t1;
-      });
-      
-      setRegistrations(regs);
-    } catch (err) {
-      console.error("Error fetching registrations", err);
-    } finally {
-      setLoading(false);
-    }
-  }
+    const regs = regsSnap.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        participants: allParts.filter(p => p.registrationId === doc.id),
+        passes: allPasses.filter(p => p.registrationId === doc.id)
+      };
+    });
+
+    regs.sort((a, b) => {
+      const t1 = a.createdAt?.toMillis() || 0;
+      const t2 = b.createdAt?.toMillis() || 0;
+      return t2 - t1;
+    });
+
+    return regs;
+  }, { enabled: !!user });
 
   const handleLogout = async () => {
     await signOut(auth);
