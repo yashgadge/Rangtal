@@ -1,0 +1,410 @@
+.scene-container {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 6rem 2rem;
+  z-index: var(--z-content);
+  overflow: hidden;
+}
+
+/* HERO SCENE */
+.hero-scene {
+  justify-content: center;
+  padding: 5rem 2rem 2rem 2rem;
+  gap: 1.5rem;
+}
+
+.hero-frame {
+  position: absolute;
+  top: 2rem; left: 2rem; right: 2rem; bottom: 2rem;
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hero-frame::before, .hero-frame::after {
+  content: '✥';
+  position: absolute;
+  color: var(--color-gold);
+  font-size: 2rem;
+  line-height: 1;
+}
+.hero-frame::before { top: -16px; left: -14px; }
+.hero-frame::after { bottom: -16px; right: -14px; }
+
+.hero-frame-inner {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+}
+.hero-frame-inner::before, .hero-frame-inner::after {
+  content: '✥';
+  position: absolute;
+  color: var(--color-gold);
+  font-size: 2rem;
+  line-height: 1;
+}
+.hero-frame-inner::before { top: -16px; right: -14px; }
+.hero-frame-inner::after { bottom: -16px; left: -14px; }
+
+
+.hero-top {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 5;
+}
+
+.hero-tagline {
+  background: linear-gradient(135deg, var(--color-gold), var(--color-orange));
+  color: var(--color-black);
+  padding: 0.5rem 2rem;
+  border-radius: 50px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-size: 1.2rem;
+  display: inline-block;
+  margin: 0 auto;
+  box-shadow: 0 5px 25px rgba(255, 107, 0, 0.4);
+  text-transform: uppercase;
+}
+
+.hero-subtitle {
+  color: var(--color-gold);
+  letter-spacing: 0.4em;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+}
+
+.hero-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  width: 100%;
+  z-index: 5;
+}
+
+.hero-bottom {
+  text-align: center;
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
+  z-index: 5;
+}
+
+.hero-organized {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.ornament-line {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  color: var(--color-ivory);
+  font-family: var(--font-body);
+  letter-spacing: 0.3em;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.ornament-line::before,
+.ornament-line::after {
+  content: '';
+  width: 50px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--color-gold), transparent);
+}
+
+.cta-glow {
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+  border: 2px solid transparent;
+  position: relative;
+  overflow: hidden;
+}
+.cta-glow:hover {
+  transform: translateY(-5px) scale(1.05);
+  box-shadow: 0 10px 40px rgba(255, 215, 0, 0.6);
+  border: 2px solid var(--color-white);
+}
+
+.hero-side-info {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  z-index: 5;
+  color: var(--color-gold);
+}
+
+.hero-side-info.left {
+  left: 4rem;
+}
+
+.hero-side-info.right {
+  right: 4rem;
+}
+
+.side-info-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-family: var(--font-body);
+  letter-spacing: 0.2em;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  color: var(--color-ivory);
+  opacity: 0.7;
+}
+
+.side-info-value {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  letter-spacing: 0.1em;
+  color: var(--color-gold);
+  text-shadow: 0 0 10px var(--color-gold-glow);
+}
+
+.side-line {
+  height: 60px;
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, var(--color-gold), transparent);
+}
+
+@media (max-width: 992px) {
+  .hero-side-info {
+    display: none;
+  }
+}
+
+/* EVENT INFO */
+.info-scene {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 100%;
+  max-width: 1200px;
+  margin-top: 4rem;
+  gap: 2rem;
+  padding: 0 2rem;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 4rem 2rem;
+  background: rgba(10, 10, 10, 0.6);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 12px;
+  position: relative;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+  transition: transform 0.3s;
+}
+
+.info-item:hover {
+  transform: translateY(-10px);
+  border-color: rgba(212, 175, 55, 0.6);
+}
+
+.info-item::before {
+  content: '✧';
+  position: absolute;
+  top: 1rem;
+  color: var(--color-gold);
+  font-size: 1.5rem;
+}
+
+.info-item h4 {
+  font-family: var(--font-display);
+  color: var(--color-saffron);
+  font-size: 2rem;
+  margin-bottom: 1.5rem;
+  letter-spacing: 0.1em;
+}
+
+.info-item p {
+  font-family: var(--font-body);
+  font-size: 1.2rem;
+  color: var(--color-ivory);
+  line-height: 1.8;
+}
+
+/* PASSES SCENE */
+.passes-scene {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: linear-gradient(to bottom, transparent, rgba(5,5,5,0.95) 30%);
+}
+
+.passes-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6rem;
+  width: 100%;
+  max-width: 1400px;
+  margin-top: 5rem;
+  padding: 0 2rem;
+}
+
+.pass-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+  justify-content: center;
+}
+
+.pass-card {
+  background: rgba(15, 10, 5, 0.8);
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(255, 153, 51, 0.4);
+  padding: 3rem;
+  border-radius: 20px;
+  transition: transform 0.4s, box-shadow 0.4s, border-color 0.4s;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+}
+
+.pass-card::before {
+  content: '';
+  position: absolute;
+  top: -50%; left: -50%; width: 200%; height: 200%;
+  background: radial-gradient(circle at center, rgba(255, 215, 0, 0.1), transparent 60%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+
+.pass-card:hover {
+  transform: translateY(-10px) scale(1.02);
+  box-shadow: 0 30px 60px rgba(255, 107, 0, 0.2);
+  border-color: var(--color-gold);
+}
+.pass-card:hover::before {
+  opacity: 1;
+}
+
+.pass-card h3 {
+  font-family: var(--font-display);
+  color: var(--color-white);
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.05em;
+}
+
+.pass-card .price {
+  font-size: 3.5rem;
+  color: var(--color-gold);
+  margin-bottom: 2rem;
+  font-family: var(--font-display);
+  text-shadow: 0 0 20px var(--color-gold-glow);
+}
+
+.pass-card ul {
+  list-style: none;
+  margin-bottom: 3rem;
+}
+
+.pass-card ul li {
+  margin-bottom: 1.2rem;
+  color: var(--color-ivory);
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-family: var(--font-body);
+}
+
+.pass-card ul li::before {
+  content: '✦';
+  color: var(--color-orange);
+  font-size: 1.2rem;
+}
+
+.pass-3d-container {
+  height: 700px;
+  width: 100%;
+  position: relative;
+  pointer-events: auto;
+}
+
+.dandiya-wrapper {
+  position: absolute;
+  top: 1.5rem;
+  right: 2rem;
+  opacity: 0.8;
+  transition: all 0.5s;
+}
+
+.pass-card:hover .dandiya-wrapper {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.dandiya-spin {
+  transform-origin: center;
+  animation: spin 10s linear infinite;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.pass-divider {
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, var(--color-gold), transparent);
+  margin-bottom: 2rem;
+}
+
+.pass-btn-buy {
+  font-size: 1.1rem;
+  letter-spacing: 0.15em;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.pass-btn-buy:hover {
+  transform: translateY(-5px) scale(1.02);
+}
+
+@media (max-width: 992px) {
+  .info-grid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  .passes-grid {
+    grid-template-columns: 1fr;
+    gap: 4rem;
+  }
+}

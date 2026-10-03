@@ -1,0 +1,46 @@
+:root {
+  /* Colors */
+  --color-black: #050505;
+  --color-gold: #FFD700;
+  --color-gold-glow: rgba(255, 215, 0, 0.4);
+  --color-saffron: #FF9933;
+  --color-orange: #FF6B00;
+  --color-maroon: #800000;
+  --color-ivory: #FFFFF0;
+  --color-white: #FFFFFF;
+
+  /* Typography */
+  --font-display: 'Yeseva One', serif;
+  --font-script: 'Great Vibes', cursive;
+  --font-body: 'Cinzel', serif;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--color-black);
+  color: var(--color-ivory);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-black);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-maroon);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-saffron);
+}

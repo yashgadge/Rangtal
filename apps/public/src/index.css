@@ -1,0 +1,178 @@
+@import url('https://fonts.googleapis.com/css2?family=Great+Vibes&family=Yeseva+One&family=Cinzel:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Colors */
+  --color-black: #050505;
+  --color-gold: #FFD700;
+  --color-gold-glow: rgba(255, 215, 0, 0.4);
+  --color-saffron: #FF9933;
+  --color-orange: #FF6B00;
+  --color-maroon: #800000;
+  --color-ivory: #FFFFF0;
+  --color-white: #FFFFFF;
+
+  /* Typography */
+  --font-display: 'Yeseva One', serif;
+  --font-script: 'Great Vibes', cursive;
+  --font-body: 'Cinzel', serif; /* Changed to Cinzel to remove typical sans-serif */
+
+  /* Z-index */
+  --z-background: -10;
+  --z-canvas: 0;
+  --z-content: 10;
+  --z-overlay: 20;
+  --z-nav: 30;
+  --z-cursor: 100;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--color-black);
+  background-image: 
+    radial-gradient(circle at 15% 30%, rgba(255, 107, 0, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 85% 70%, rgba(212, 175, 55, 0.15) 0%, transparent 40%),
+    radial-gradient(circle at 50% 0%, rgba(128, 0, 0, 0.2) 0%, transparent 50%);
+  color: var(--color-ivory);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+/* Faint background art dancers */
+.bg-dancer-1, .bg-dancer-2 {
+  position: fixed;
+  pointer-events: none;
+  z-index: -4;
+  mix-blend-mode: screen;
+  opacity: 0.3;
+  -webkit-mask-image: radial-gradient(circle at center, black 40%, transparent 70%);
+  mask-image: radial-gradient(circle at center, black 40%, transparent 70%);
+}
+
+.bg-dancer-1 {
+  bottom: -10%;
+  left: -5%;
+  width: 60vw;
+  max-width: 600px;
+  animation: float-dancer 10s ease-in-out infinite alternate;
+}
+
+.bg-dancer-2 {
+  top: 5%;
+  right: -5%;
+  width: 50vw;
+  max-width: 500px;
+  animation: float-dancer-2 12s ease-in-out infinite alternate;
+}
+
+@keyframes float-dancer {
+  0% { transform: translateY(0) rotate(0deg); }
+  100% { transform: translateY(-30px) rotate(2deg); }
+}
+
+@keyframes float-dancer-2 {
+  0% { transform: translateY(0) rotate(0deg) scaleX(-1); }
+  100% { transform: translateY(30px) rotate(-2deg) scaleX(-1); }
+}
+
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-black);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-maroon);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-saffron);
+}
+
+/* Base styles */
+.app-container {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+}
+
+.canvas-container {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: var(--z-canvas);
+  pointer-events: none;
+}
+
+.content-layer {
+  position: relative;
+  z-index: var(--z-content);
+  width: 100%;
+}
+
+/* Typography Utility */
+.text-display-massive {
+  font-family: var(--font-display);
+  font-size: clamp(4rem, 15vw, 12rem);
+  line-height: 0.9;
+  text-align: center;
+  color: var(--color-ivory);
+  text-shadow: 0 5px 15px rgba(0,0,0,0.8);
+  position: relative;
+  z-index: 2;
+}
+
+.text-script-massive {
+  font-family: var(--font-script);
+  font-size: clamp(3rem, 10vw, 8rem);
+  color: var(--color-gold);
+  line-height: 0.5;
+  text-align: center;
+  text-shadow: 0 0 30px var(--color-gold-glow);
+  position: relative;
+  z-index: 3;
+  transform: rotate(-5deg) translateY(-20px);
+}
+
+.text-display-large {
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  line-height: 1.1;
+  text-align: center;
+  color: var(--color-gold);
+}
+
+.text-script-medium {
+  font-family: var(--font-script);
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  color: var(--color-ivory);
+}
+
+.text-body {
+  font-family: var(--font-body);
+  font-size: clamp(1.2rem, 2vw, 1.4rem);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--color-ivory);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  body.custom-cursor {
+    cursor: none;
+  }
+  body.custom-cursor a,
+  body.custom-cursor button {
+    cursor: none;
+  }
+}

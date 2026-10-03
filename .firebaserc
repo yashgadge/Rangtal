@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "rhythm-rebel"
+  },
+  "targets": {
+    "rhythm-rebel": {
+      "hosting": {
+        "rangtal": ["rhythm-rebel"],
+        "admin-rangtal": ["admin-rhythm-rebel"],
+        "vol-rangtal": ["vol-rhythm-rebel"]
+      }
+    }
+  }
+}
