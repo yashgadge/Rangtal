@@ -6,11 +6,15 @@ import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
 import { motion } from 'framer-motion';
 import { Ticket, Download, AlertTriangle } from 'lucide-react';
+import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
+import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 
 export default function Passes() {
+  const toast = useToast();
   const [passes, setPasses] = useState([]);
   const [filteredPasses, setFilteredPasses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPass, setSelectedPass] = useState(null);
@@ -34,13 +38,16 @@ export default function Passes() {
 
   async function fetchPasses() {
     setLoading(true);
+    setError(null);
     try {
-      const q = query(collection(db, 'passes'), orderBy('createdAt', 'desc'), limit(150));
+      const q = query(collection(db, 'passes'), orderBy('createdAt', 'desc'), limit(100));
       const snap = await getDocs(q);
       const pData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setPasses(pData);
     } catch (err) {
       console.error("Error fetching passes", err);
+      setError(err);
+      toast.error('Failed to load passes', normalizeError(err));
     } finally {
       setLoading(false);
     }
@@ -48,14 +55,17 @@ export default function Passes() {
 
   async function handleRevoke(passId) {
     if (!window.confirm("Are you sure you want to revoke this pass? It will no longer be scannable.")) return;
+    const toastId = toast.loading('Revoking pass...');
     try {
       await updateDoc(doc(db, 'passes', passId), { status: 'REVOKED' });
       fetchPasses();
       if(selectedPass?.id === passId) {
          setSelectedPass({...selectedPass, status: 'REVOKED'});
       }
+      toast.update(toastId, 'success', 'Pass revoked successfully');
     } catch (err) {
-      alert("Error: " + err.message);
+      console.error(err);
+      toast.update(toastId, 'error', 'Error revoking pass', normalizeError(err));
     }
   }
 
@@ -82,33 +92,21 @@ export default function Passes() {
         description="Monitor issued digital passes and their status." 
         actions={
           <button className="btn btn-secondary" onClick={fetchPasses}>
-            <Download size={16} /> Export
+            <Download size={16} /> Export Recent
           </button>
         }
       />
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-        {[
-          { label: 'Total Issued', val: passes.length },
-          { label: 'Active', val: passes.filter(p => p.status === 'ACTIVE').length },
-          { label: 'Revoked', val: passes.filter(p => p.status === 'REVOKED').length }
-        ].map(stat => (
-          <div key={stat.label} className="surface" style={{ padding: '1rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-heading)', color: 'var(--color-gold)' }}>{stat.val}</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{stat.label}</div>
-          </div>
-        ))}
-      </div>
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <DataTable 
           columns={columns} 
           data={filteredPasses} 
           loading={loading}
+          error={error}
           onRowClick={setSelectedPass}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
-          searchPlaceholder="Search by Pass ID, Name, or Registration ID..."
+          searchPlaceholder="Search recent passes by Pass ID, Name, or Registration ID..."
         />
       </div>
 

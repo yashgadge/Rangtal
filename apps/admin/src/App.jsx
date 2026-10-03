@@ -1,60 +1,101 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AdminLogin from './pages/Login';
 import AdminLayout from './components/AdminLayout';
-import Registrations from './pages/Registrations';
-import Packages from './pages/Packages';
-import Colleges from './pages/Colleges';
-import Passes from './pages/Passes';
-import Checkins from './pages/Checkins';
-import Participants from './pages/Participants';
-import Verification from './pages/Verification';
-import Payments from './pages/Payments';
-import AuditLogs from './pages/AuditLogs';
-import Settings from './pages/Settings';
+import NetworkIndicator from './components/NetworkIndicator';
 
-import Dashboard from './pages/Dashboard';
-import Volunteers from './pages/Volunteers';
+// Lazy loading all major pages
+const Dashboard = React.lazy(() => import('./pages/Dashboard'));
+const Registrations = React.lazy(() => import('./pages/Registrations'));
+const Packages = React.lazy(() => import('./pages/Packages'));
+const Colleges = React.lazy(() => import('./pages/Colleges'));
+const Passes = React.lazy(() => import('./pages/Passes'));
+const Checkins = React.lazy(() => import('./pages/Checkins'));
+const Participants = React.lazy(() => import('./pages/Participants'));
+const Verification = React.lazy(() => import('./pages/Verification'));
+const Payments = React.lazy(() => import('./pages/Payments'));
+const AuditLogs = React.lazy(() => import('./pages/AuditLogs'));
+const Settings = React.lazy(() => import('./pages/Settings'));
+const Volunteers = React.lazy(() => import('./pages/Volunteers'));
 
 const ProtectedRoute = ({ children }) => {
   const { status } = useAuth();
-  if (status === 'INITIALIZING') return <div style={{ color: 'white', padding: '2rem' }}>Loading Auth...</div>;
-  if (status === 'UNAUTHENTICATED' || status === 'DISABLED' || status === 'ERROR') return <Navigate to="/login" />;
+  
+  if (status === 'INITIALIZING') {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#050505' }}>
+        <div style={{ color: 'var(--color-gold)', fontFamily: 'var(--font-heading)', fontSize: '1.5rem', letterSpacing: '2px', animation: 'pulse 1.5s infinite' }}>
+          RANGTAL ADMIN
+        </div>
+      </div>
+    );
+  }
+  
+  if (status === 'UNAUTHENTICATED' || status === 'DISABLED' || status === 'ERROR') {
+    return <Navigate to="/login" />;
+  }
+  
   return children;
 };
 
-const PlaceholderPage = ({ title }) => (
-  <div style={{ color: 'var(--color-ivory)', padding: '2rem' }}>
-    <h2 style={{ color: 'var(--color-gold)', marginBottom: '1rem', fontSize: '1.5rem' }}>{title}</h2>
-    <p>This page is currently under construction. Core UI and layout will be connected shortly.</p>
+const PageLoader = () => (
+  <div style={{ padding: '2rem', display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+    <div style={{ color: 'var(--text-secondary)' }}>Loading...</div>
   </div>
 );
 
 function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/login" element={<AdminLogin />} />
+    <>
+      <NetworkIndicator />
+      <Routes>
+        <Route path="/login" element={<AdminLogin />} />
       <Route path="/" element={
         <ProtectedRoute>
           <AdminLayout />
         </ProtectedRoute>
       }>
         <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="registrations" element={<Registrations />} />
-        <Route path="participants" element={<Participants />} />
-        <Route path="verification" element={<Verification />} />
-        <Route path="payments" element={<Payments />} />
-        <Route path="passes" element={<Passes />} />
-        <Route path="check-ins" element={<Checkins />} />
-        <Route path="volunteers" element={<Volunteers />} />
-        <Route path="packages" element={<Packages />} />
-        <Route path="colleges" element={<Colleges />} />
-        <Route path="audit-logs" element={<AuditLogs />} />
-        <Route path="settings" element={<Settings />} />
+        <Route path="dashboard" element={
+          <Suspense fallback={<PageLoader />}><Dashboard /></Suspense>
+        } />
+        <Route path="registrations" element={
+          <Suspense fallback={<PageLoader />}><Registrations /></Suspense>
+        } />
+        <Route path="participants" element={
+          <Suspense fallback={<PageLoader />}><Participants /></Suspense>
+        } />
+        <Route path="verification" element={
+          <Suspense fallback={<PageLoader />}><Verification /></Suspense>
+        } />
+        <Route path="payments" element={
+          <Suspense fallback={<PageLoader />}><Payments /></Suspense>
+        } />
+        <Route path="passes" element={
+          <Suspense fallback={<PageLoader />}><Passes /></Suspense>
+        } />
+        <Route path="check-ins" element={
+          <Suspense fallback={<PageLoader />}><Checkins /></Suspense>
+        } />
+        <Route path="volunteers" element={
+          <Suspense fallback={<PageLoader />}><Volunteers /></Suspense>
+        } />
+        <Route path="packages" element={
+          <Suspense fallback={<PageLoader />}><Packages /></Suspense>
+        } />
+        <Route path="colleges" element={
+          <Suspense fallback={<PageLoader />}><Colleges /></Suspense>
+        } />
+        <Route path="audit-logs" element={
+          <Suspense fallback={<PageLoader />}><AuditLogs /></Suspense>
+        } />
+        <Route path="settings" element={
+          <Suspense fallback={<PageLoader />}><Settings /></Suspense>
+        } />
       </Route>
     </Routes>
+    </>
   );
 }
 

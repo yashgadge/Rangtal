@@ -1,21 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, orderBy, where } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, where, limit } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckSquare, Check, X, FileText, Download } from 'lucide-react';
+import { CheckSquare, Check, X, FileText, Download, AlertCircle } from 'lucide-react';
+import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
+import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 
 export default function Verification() {
+  const toast = useToast();
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
   const [selectedReg, setSelectedReg] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState(null);
   const [correctionReason, setCorrectionReason] = useState('');
 
-  const [activeTab, setActiveTab] = useState('VERIFICATION_PENDING'); // SUBMITTED is handled as VERIFICATION_PENDING
+  const [activeTab, setActiveTab] = useState('VERIFICATION_PENDING');
 
   useEffect(() => {
     fetchQueue();
@@ -23,17 +29,18 @@ export default function Verification() {
 
   async function fetchQueue() {
     setLoading(true);
+    setError(null);
     setSelectedReg(null);
     try {
-      // In production, we'd paginate.
       let statuses = [activeTab];
       if (activeTab === 'VERIFICATION_PENDING') {
-        statuses = ['VERIFICATION_PENDING', 'SUBMITTED']; // Usually submitted moves to pending immediately
+        statuses = ['VERIFICATION_PENDING', 'SUBMITTED'];
       }
       
-      const q = query(collection(db, 'registrations'), where('verificationStatus', 'in', statuses));
+      const q = query(collection(db, 'registrations'), where('status', 'in', statuses), limit(50));
       const snap = await getDocs(q);
-      const regs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => b.createdAt - a.createdAt);
+      // Sort client side to avoid missing index errors for now, although prod should use index
+      const regs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
       setRegistrations(regs);
       
       if (regs.length > 0) {
@@ -41,6 +48,8 @@ export default function Verification() {
       }
     } catch (err) {
       console.error("Error fetching verification queue", err);
+      setError(err);
+      toast.error('Failed to fetch queue', normalizeError(err));
     } finally {
       setLoading(false);
     }
@@ -49,16 +58,15 @@ export default function Verification() {
   async function handleSelectRegistration(reg) {
     setSelectedReg(reg);
     setLoadingDetails(true);
+    setDetailsError(null);
     setParticipants([]);
     setDocuments([]);
     setCorrectionReason('');
     
     try {
-      const participantsSnap = await getDocs(collection(db, 'participants'));
-      const parts = participantsSnap.docs
-        .map(d => ({id: d.id, ...d.data()}))
-        .filter(p => p.registrationId === reg.id);
-      
+      const pQuery = query(collection(db, 'participants'), where('registrationId', '==', reg.id));
+      const participantsSnap = await getDocs(pQuery);
+      const parts = participantsSnap.docs.map(d => ({id: d.id, ...d.data()}));
       setParticipants(parts);
       
       const docs = [];
@@ -77,39 +85,49 @@ export default function Verification() {
       
     } catch (err) {
       console.error("Error fetching details", err);
+      setDetailsError(err.message);
+      toast.error('Failed to load details', normalizeError(err));
     } finally {
       setLoadingDetails(false);
     }
   }
 
-  async function handleApprove() {
+  async function handleApprove(participantId) {
     if (!selectedReg) return;
+    const toastId = toast.loading('Approving participant...');
     try {
       setLoadingDetails(true);
       const approveFn = httpsCallable(functions, 'approveVerification');
-      await approveFn({ registrationId: selectedReg.id });
+      await approveFn({ participantId });
       
-      fetchQueue();
+      // refresh details to show updated participant status
+      await handleSelectRegistration(selectedReg);
+      toast.update(toastId, 'success', 'Participant approved');
     } catch (err) {
       console.error(err);
-      alert("Error approving: " + err.message);
+      toast.update(toastId, 'error', 'Error approving', normalizeError(err));
     } finally {
       setLoadingDetails(false);
     }
   }
 
-  async function handleRequestCorrection() {
+  async function handleRequestCorrection(participantId) {
     if (!selectedReg) return;
-    if (!correctionReason) return alert("Please provide a reason.");
+    if (!correctionReason) {
+      toast.warning('Correction Reason Required', 'Please provide a reason.');
+      return;
+    }
+    const toastId = toast.loading('Requesting correction...');
     try {
       setLoadingDetails(true);
       const correctionFn = httpsCallable(functions, 'requestVerificationCorrection');
-      await correctionFn({ registrationId: selectedReg.id, reason: correctionReason });
+      await correctionFn({ participantId, reason: correctionReason });
       
-      fetchQueue();
+      await handleSelectRegistration(selectedReg);
+      toast.update(toastId, 'success', 'Correction requested successfully');
     } catch (err) {
       console.error(err);
-      alert("Error requesting correction: " + err.message);
+      toast.update(toastId, 'error', 'Error requesting correction', normalizeError(err));
     } finally {
       setLoadingDetails(false);
     }
@@ -122,7 +140,6 @@ export default function Verification() {
         description="Review participant registrations and verify documents." 
       />
 
-      {/* Tabs */}
       <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--border-light)', marginBottom: '1.5rem', paddingBottom: '0.5rem' }}>
         {[
           { id: 'VERIFICATION_PENDING', label: 'Pending Review' },
@@ -154,6 +171,11 @@ export default function Verification() {
           <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
             {loading ? (
               <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading queue...</div>
+            ) : error ? (
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-error)' }}>
+                <AlertCircle size={32} style={{ margin: '0 auto 1rem' }} />
+                Error loading queue
+              </div>
             ) : registrations.length === 0 ? (
               <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                 <CheckSquare size={32} style={{ opacity: 0.5, margin: '0 auto 1rem' }} />
@@ -194,6 +216,10 @@ export default function Verification() {
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ color: 'var(--text-muted)', animation: 'pulse 2s infinite' }}>Loading workspace details...</div>
               </div>
+            ) : detailsError ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-error)' }}>
+                {detailsError}
+              </div>
             ) : (
               <div style={{ flex: 1, overflowY: 'auto', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
                 
@@ -205,20 +231,43 @@ export default function Verification() {
                   <span className={`badge ${selectedReg.verificationStatus === 'VERIFIED' ? 'badge-success' : 'badge-warning'}`}>{selectedReg.verificationStatus}</span>
                 </div>
 
-                {/* Participants */}
                 <div className="surface-flat" style={{ padding: '1.5rem' }}>
                   <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', marginBottom: '1rem', letterSpacing: '1px' }}>Participant Details</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(1, 1fr)', gap: '1rem' }}>
                     {participants.map((p, i) => (
-                      <div key={p.id} style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', borderLeft: '3px solid var(--color-gold)' }}>
-                        <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.25rem' }}>{p.fullName}</div>
-                        <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{p.gender} • {p.email || 'No email'}</div>
+                      <div key={p.id} style={{ padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', borderLeft: `3px solid ${p.verificationStatus === 'APPROVED' ? 'var(--color-success)' : p.verificationStatus === 'REQUIRES_CORRECTION' ? 'var(--color-error)' : 'var(--color-gold)'}` }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.25rem' }}>{p.fullName}</div>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{p.gender} • Status: {p.verificationStatus}</div>
+                          </div>
+                          
+                          {(selectedReg.status === 'VERIFICATION_PENDING' || selectedReg.status === 'SUBMITTED' || selectedReg.status === 'REQUIRES_CORRECTION') && p.verificationStatus !== 'APPROVED' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '250px' }}>
+                              <input 
+                                type="text" 
+                                className="form-input" 
+                                style={{ padding: '0.5rem', fontSize: '0.85rem' }}
+                                placeholder="Correction Reason..."
+                                value={correctionReason}
+                                onChange={e => setCorrectionReason(e.target.value)}
+                              />
+                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <button className="btn btn-secondary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.8rem', color: 'var(--color-warning)', borderColor: 'var(--color-warning)' }} onClick={() => handleRequestCorrection(p.id)}>
+                                  <X size={14} /> Correct
+                                </button>
+                                <button className="btn btn-primary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.8rem' }} onClick={() => handleApprove(p.id)}>
+                                  <Check size={14} /> Approve
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Documents */}
                 <div className="surface-flat" style={{ padding: '1.5rem' }}>
                   <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', textTransform: 'uppercase', marginBottom: '1rem', letterSpacing: '1px' }}>Verification Documents</h4>
                   {documents.length > 0 ? (
@@ -248,37 +297,6 @@ export default function Verification() {
                     <p style={{ color: 'var(--text-muted)' }}>No documents found.</p>
                   )}
                 </div>
-
-                {/* Decision Controls */}
-                {(selectedReg.verificationStatus === 'VERIFICATION_PENDING' || selectedReg.verificationStatus === 'SUBMITTED') && (
-                  <div className="surface" style={{ padding: '1.5rem', background: 'rgba(5,5,5,0.5)' }}>
-                    <h4 style={{ color: 'var(--color-gold)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <CheckSquare size={18} /> Verification Decision
-                    </h4>
-                    
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">Correction Reason (if applicable)</label>
-                        <input 
-                          type="text" 
-                          className="form-input" 
-                          placeholder="e.g. ID card image is too blurry to read."
-                          value={correctionReason}
-                          onChange={e => setCorrectionReason(e.target.value)}
-                        />
-                      </div>
-                      
-                      <div style={{ display: 'flex', gap: '1rem' }}>
-                        <button className="btn btn-secondary" style={{ flex: 1, color: 'var(--color-warning)', borderColor: 'var(--color-warning)' }} onClick={handleRequestCorrection}>
-                          <X size={16} /> Request Correction
-                        </button>
-                        <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleApprove}>
-                          <Check size={16} /> Approve
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
                 
               </div>
             )

@@ -1,19 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Scanner as QrScanner } from '@yudiel/react-qr-scanner';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ScanLine, CheckCircle2, XCircle, UserCheck, RefreshCw, LogOut } from 'lucide-react';
+import { ScanLine, CheckCircle2, XCircle, UserCheck, RefreshCw, WifiOff } from 'lucide-react';
+import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
+import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 
 export default function Scanner() {
+  const toast = useToast();
   const [scanResult, setScanResult] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [scannerActive, setScannerActive] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      toast.success('Connection Restored', 'Back online and ready to scan.');
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      toast.error('Connection Lost', 'Cannot scan passes offline.');
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  const [selectedParticipants, setSelectedParticipants] = useState([]);
 
   const handleScan = async (detectedCodes) => {
-    if (!scannerActive || isProcessing || detectedCodes.length === 0) return;
+    if (isOffline || !scannerActive || isProcessing || detectedCodes.length === 0) return;
     
     const passId = detectedCodes[0].rawValue;
     if (!passId) return;
@@ -23,14 +48,21 @@ export default function Scanner() {
     setLoading(true);
     setError(null);
     setScanResult(null);
+    setSelectedParticipants([]);
     
     try {
       const verifyPassFn = httpsCallable(functions, 'verifyPass');
       const response = await verifyPassFn({ passId });
       setScanResult(response.data);
+      if (response.data.isGroup && response.data.participants) {
+        // pre-select those who are not checked in
+        setSelectedParticipants(response.data.participants.filter(p => p.checkInStatus !== 'CHECKED_IN').map(p => p.id));
+      }
     } catch (err) {
       console.error(err);
-      setError(err.message || "Invalid or unrecognized pass");
+      const normalized = normalizeError(err);
+      setError(normalized);
+      toast.error('Scan Failed', normalized);
     } finally {
       setLoading(false);
       setIsProcessing(false);
@@ -41,19 +73,45 @@ export default function Scanner() {
     setScanResult(null);
     setError(null);
     setScannerActive(true);
+    setSelectedParticipants([]);
   };
 
   const handleCheckIn = async (passId) => {
+    if (isOffline) {
+      setError("Cannot securely validate this pass while offline.");
+      toast.error('Offline', 'Cannot securely validate this pass while offline.');
+      return;
+    }
+    
     setLoading(true);
+    const toastId = toast.loading('Processing Check-In...');
     try {
-      const checkInFn = httpsCallable(functions, 'checkInParticipant');
-      await checkInFn({ passId });
-      setScanResult(prev => ({ ...prev, status: 'USED' }));
+      if (scanResult.isGroup) {
+        const checkInFn = httpsCallable(functions, 'checkInGroupMembers');
+        await checkInFn({ secureCode: passId, selectedParticipantIds: selectedParticipants });
+        setScanResult(prev => {
+          const updatedParts = prev.participants.map(p => selectedParticipants.includes(p.id) ? { ...p, checkInStatus: 'CHECKED_IN' } : p);
+          return { ...prev, status: 'USED', participants: updatedParts };
+        });
+        toast.update(toastId, 'success', `Successfully checked in ${selectedParticipants.length} participant(s)`);
+      } else {
+        const checkInFn = httpsCallable(functions, 'checkInParticipant');
+        await checkInFn({ secureCode: passId });
+        setScanResult(prev => ({ ...prev, status: 'USED' }));
+        toast.update(toastId, 'success', 'Participant checked in successfully');
+      }
     } catch (err) {
-      setError(err.message || "Check-in failed");
+      console.error(err);
+      const normalized = normalizeError(err);
+      setError(normalized);
+      toast.update(toastId, 'error', 'Check-In Failed', normalized);
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleParticipant = (id) => {
+    setSelectedParticipants(prev => prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]);
   };
 
   return (
@@ -62,14 +120,25 @@ export default function Scanner() {
       {/* Header */}
       <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10, background: 'linear-gradient(to bottom, rgba(0,0,0,0.8), transparent)' }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', color: 'var(--color-gold)', margin: 0, fontSize: '1.5rem', letterSpacing: '2px' }}>RANGTAL</h1>
-        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.1)', padding: '0.25rem 0.75rem', borderRadius: '999px' }}>Gate Operations</div>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {isOffline && <WifiOff size={16} color="var(--color-error)" />}
+          <div style={{ fontSize: '0.8rem', color: isOffline ? 'var(--color-error)' : 'var(--text-secondary)', background: isOffline ? 'rgba(239, 68, 68, 0.1)' : 'rgba(255,255,255,0.1)', padding: '0.25rem 0.75rem', borderRadius: '999px', fontWeight: 600 }}>
+            {isOffline ? 'OFFLINE' : 'Gate Operations'}
+          </div>
+        </div>
       </div>
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
         
         {/* Scanner View */}
         <div style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          {scannerActive ? (
+          {isOffline ? (
+            <div style={{ width: '100%', height: '100%', background: '#111', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', textAlign: 'center' }}>
+              <WifiOff size={64} color="var(--color-error)" style={{ marginBottom: '1rem' }} />
+              <h2 style={{ color: 'white', marginBottom: '1rem' }}>NETWORK UNAVAILABLE</h2>
+              <p style={{ color: 'var(--text-secondary)' }}>Cannot securely validate passes without an active internet connection. Please reconnect to continue scanning.</p>
+            </div>
+          ) : scannerActive ? (
             <div style={{ width: '100%', height: '100%', position: 'relative' }}>
               <QrScanner
                 onScan={handleScan}
@@ -103,7 +172,7 @@ export default function Scanner() {
 
         {/* Results Overlay */}
         <AnimatePresence>
-          {(!scannerActive && (loading || error || scanResult)) && (
+          {(!scannerActive && (loading || error || scanResult) && !isOffline) && (
             <motion.div 
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
@@ -114,7 +183,8 @@ export default function Scanner() {
                 background: 'var(--bg-elevated)', borderTopLeftRadius: '24px', borderTopRightRadius: '24px',
                 padding: '2rem', borderTop: '1px solid rgba(255,255,255,0.1)',
                 boxShadow: '0 -10px 40px rgba(0,0,0,0.5)',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center'
+                display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
+                maxHeight: '90vh', overflowY: 'auto'
               }}
             >
               {loading && (
@@ -122,7 +192,7 @@ export default function Scanner() {
                   <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}>
                     <RefreshCw size={48} color="var(--color-gold)" style={{ opacity: 0.5 }} />
                   </motion.div>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>Verifying...</p>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>Processing...</p>
                 </div>
               )}
 
@@ -139,22 +209,24 @@ export default function Scanner() {
 
               {scanResult && !loading && (
                 <div style={{ width: '100%' }}>
-                  {scanResult.status === 'ISSUED' ? (
+                  {scanResult.status === 'ISSUED' || (scanResult.isGroup && scanResult.participants?.some(p => p.checkInStatus !== 'CHECKED_IN')) ? (
                     <CheckCircle2 size={64} color="var(--color-success)" style={{ margin: '0 auto 1rem' }} />
                   ) : (
                     <XCircle size={64} color="var(--color-warning)" style={{ margin: '0 auto 1rem' }} />
                   )}
                   
                   <h3 style={{ fontSize: '1.5rem', color: 'white', marginBottom: '0.25rem' }}>
-                    {scanResult.status === 'ISSUED' ? 'Valid Pass' : 'Invalid / Already Used'}
+                    {scanResult.isGroup ? 'Group Pass' : (scanResult.status === 'ISSUED' ? 'Valid Pass' : 'Invalid / Already Used')}
                   </h3>
                   
                   <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '1.5rem', margin: '1.5rem 0', textAlign: 'left' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                      <div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Participant</div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'white' }}>{scanResult.participantName || 'Unknown'}</div>
-                      </div>
+                      {!scanResult.isGroup && (
+                        <div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Participant</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'white' }}>{scanResult.participantName || 'Unknown'}</div>
+                        </div>
+                      )}
                       <div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Type</div>
                         <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'white' }}>{scanResult.type || 'N/A'}</div>
@@ -163,7 +235,7 @@ export default function Scanner() {
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Status</div>
                         <div style={{ 
                           fontSize: '1.1rem', fontWeight: 600, 
-                          color: scanResult.status === 'ISSUED' ? 'var(--color-success)' : 'var(--color-error)' 
+                          color: (scanResult.status === 'ISSUED' || (scanResult.isGroup && scanResult.participants?.some(p => p.checkInStatus !== 'CHECKED_IN'))) ? 'var(--color-success)' : 'var(--color-error)' 
                         }}>
                           {scanResult.status}
                         </div>
@@ -171,10 +243,39 @@ export default function Scanner() {
                     </div>
                   </div>
 
+                  {scanResult.isGroup && scanResult.participants && (
+                    <div style={{ textAlign: 'left', marginBottom: '1.5rem' }}>
+                      <h4 style={{ fontSize: '1rem', color: 'var(--color-gold)', marginBottom: '1rem' }}>Select Participants to Check-in</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {scanResult.participants.map(p => {
+                          const isCheckedIn = p.checkInStatus === 'CHECKED_IN';
+                          const isSelected = selectedParticipants.includes(p.id);
+                          return (
+                            <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', cursor: isCheckedIn ? 'not-allowed' : 'pointer', opacity: isCheckedIn ? 0.5 : 1 }}>
+                              <input 
+                                type="checkbox" 
+                                checked={isSelected || isCheckedIn} 
+                                onChange={() => !isCheckedIn && toggleParticipant(p.id)}
+                                disabled={isCheckedIn}
+                                style={{ transform: 'scale(1.5)' }}
+                              />
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: '1.1rem', color: 'white', fontWeight: 500 }}>{p.fullName}</div>
+                                <div style={{ fontSize: '0.85rem', color: isCheckedIn ? 'var(--color-success)' : 'var(--text-secondary)' }}>
+                                  {isCheckedIn ? 'Already Checked In' : p.verificationStatus}
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {scanResult.status === 'ISSUED' ? (
+                    {(scanResult.status === 'ISSUED' || (scanResult.isGroup && selectedParticipants.length > 0)) ? (
                       <button onClick={() => handleCheckIn(scanResult.passId)} style={{ width: '100%', padding: '1rem', background: 'var(--color-success)', color: 'black', border: 'none', borderRadius: '12px', fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                        <UserCheck size={20} /> Confirm Check-In
+                        <UserCheck size={20} /> {scanResult.isGroup ? `Check In Selected (${selectedParticipants.length})` : 'Confirm Check-In'}
                       </button>
                     ) : (
                       <button onClick={resetScanner} style={{ width: '100%', padding: '1rem', background: 'var(--color-gold)', color: 'black', border: 'none', borderRadius: '12px', fontSize: '1.1rem', fontWeight: 600 }}>
@@ -182,7 +283,7 @@ export default function Scanner() {
                       </button>
                     )}
                     
-                    {scanResult.status === 'ISSUED' && (
+                    {(scanResult.status === 'ISSUED' || scanResult.isGroup) && (
                       <button onClick={resetScanner} style={{ width: '100%', padding: '1rem', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '12px', fontSize: '1rem', fontWeight: 600 }}>
                         Cancel
                       </button>

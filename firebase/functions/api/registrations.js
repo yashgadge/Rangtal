@@ -13,14 +13,6 @@ exports.createRegistration = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Missing required registration parameters.");
   }
 
-  // Enforce Single/Couple rules based on participants payload structure
-  if (type === "SINGLE" && participants.length !== 1) {
-    throw new HttpsError("invalid-argument", "Single registration requires exactly 1 participant.");
-  }
-  if (type === "COUPLE" && participants.length !== 2) {
-    throw new HttpsError("invalid-argument", "Couple registration requires exactly 2 participants.");
-  }
-
   // 1. Verify Package & Capacity (but reservation occurs at Payment creation to avoid deadlocking drafts)
   const packageRef = db.collection("packages").doc(packageId);
   const packageSnap = await packageRef.get();
@@ -33,6 +25,11 @@ exports.createRegistration = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Package is not currently active.");
   }
   
+  const expectedCount = packageData.participantCount || 1;
+  if (participants.length !== expectedCount) {
+    throw new HttpsError("invalid-argument", `This package requires exactly ${expectedCount} participants.`);
+  }
+
   // Calculate authoritative price from the package definition
   const authoritativeAmount = packageData.price;
 
@@ -44,6 +41,9 @@ exports.createRegistration = onCall(async (request) => {
     packageId: packageId,
     collegeId: collegeId,
     type: type,
+    participantCount: expectedCount,
+    checkedInCount: 0,
+    verifiedCount: 0,
     status: "DRAFT", // Always initial state
     amount: authoritativeAmount,
     currency: "INR", // Or pull from package
@@ -60,7 +60,7 @@ exports.createRegistration = onCall(async (request) => {
 
     // Create Participant records
     for (const p of participants) {
-      if (!p.fullName || !p.gender) {
+      if (!p.fullName) {
         throw new HttpsError("invalid-argument", "Participant missing required fields.");
       }
       const partRef = db.collection("participants").doc();
@@ -69,8 +69,11 @@ exports.createRegistration = onCall(async (request) => {
         registrationId: registrationRef.id,
         uid: uid,
         fullName: p.fullName,
-        gender: p.gender,
+        gender: p.gender || '',
+        college: p.college || '',
+        mobile: p.mobile || '',
         verificationStatus: "PENDING",
+        checkInStatus: "NOT_CHECKED_IN",
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp()
       });

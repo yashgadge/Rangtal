@@ -5,8 +5,11 @@ import PageHeader from '../components/PageHeader';
 import DetailDrawer from '../components/DetailDrawer';
 import { motion } from 'framer-motion';
 import { PackageOpen, Plus, Edit2, Check, X, AlertTriangle } from 'lucide-react';
+import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
+import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 
 export default function Packages() {
+  const toast = useToast();
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -19,7 +22,8 @@ export default function Packages() {
     capacity: 1000,
     soldCount: 0,
     active: true,
-    description: ''
+    description: '',
+    participantCount: 1
   });
 
   useEffect(() => {
@@ -35,13 +39,14 @@ export default function Packages() {
       setPackages(pkgs);
     } catch (err) {
       console.error("Error fetching packages", err);
+      toast.error('Failed to load packages', normalizeError(err));
     } finally {
       setLoading(false);
     }
   }
 
   function handleEdit(pkg) {
-    setFormData({ ...pkg });
+    setFormData({ ...pkg, participantCount: pkg.participantCount || (pkg.type === 'COUPLE' ? 2 : 1) });
     setIsEditing(true);
   }
 
@@ -54,15 +59,22 @@ export default function Packages() {
       capacity: 1000,
       soldCount: 0,
       active: true,
-      description: ''
+      description: '',
+      participantCount: 1
     });
     setIsEditing(true);
   }
 
   async function handleSave(e) {
     e.preventDefault();
+    const toastId = toast.loading('Saving package...');
     try {
       const pkgRef = doc(db, 'packages', formData.id);
+      
+      let pCount = Number(formData.participantCount);
+      if (formData.type === 'SINGLE') pCount = 1;
+      if (formData.type === 'COUPLE') pCount = 2;
+
       await setDoc(pkgRef, {
         name: formData.name,
         type: formData.type,
@@ -70,14 +82,16 @@ export default function Packages() {
         capacity: Number(formData.capacity),
         soldCount: Number(formData.soldCount),
         active: formData.active,
-        description: formData.description
+        description: formData.description,
+        participantCount: pCount
       }, { merge: true });
       
       setIsEditing(false);
       fetchPackages();
+      toast.update(toastId, 'success', 'Package saved successfully');
     } catch (err) {
       console.error("Error saving package", err);
-      alert('Error saving package: ' + err.message);
+      toast.update(toastId, 'error', 'Failed to save package', normalizeError(err));
     }
   }
 
@@ -86,8 +100,10 @@ export default function Packages() {
       const pkgRef = doc(db, 'packages', pkg.id);
       await updateDoc(pkgRef, { active: !pkg.active });
       fetchPackages();
+      toast.success(pkg.active ? 'Package disabled' : 'Package enabled');
     } catch (err) {
-      alert('Error updating status: ' + err.message);
+      console.error(err);
+      toast.error('Error updating status', normalizeError(err));
     }
   }
 
@@ -133,7 +149,8 @@ export default function Packages() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
                     <div>
                       <h3 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '0.25rem' }}>{pkg.name}</h3>
-                      <span className={`badge ${pkg.type === 'COUPLE' ? 'badge-info' : 'badge-neutral'}`}>{pkg.type}</span>
+                      <span className={`badge ${pkg.type === 'COUPLE' ? 'badge-info' : pkg.type === 'GROUP' ? 'badge-warning' : 'badge-neutral'}`}>{pkg.type}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-success)', marginLeft: '0.5rem' }}>({pkg.participantCount || 1} Person)</span>
                     </div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--color-gold)', fontFamily: 'var(--font-heading)' }}>
                       ₹{pkg.price}
@@ -223,9 +240,10 @@ export default function Packages() {
           <div style={{ display: 'flex', gap: '1rem' }}>
             <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
               <label className="form-label">Type</label>
-              <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="form-input">
+              <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value, participantCount: e.target.value === 'SINGLE' ? 1 : e.target.value === 'COUPLE' ? 2 : formData.participantCount})} className="form-input">
                 <option value="SINGLE">SINGLE</option>
                 <option value="COUPLE">COUPLE</option>
+                <option value="GROUP">GROUP</option>
               </select>
             </div>
             <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
@@ -233,10 +251,17 @@ export default function Packages() {
               <input type="number" required min="0" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="form-input" />
             </div>
           </div>
+
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+              <label className="form-label">Participants Per Pass</label>
+              <input type="number" required min="1" disabled={formData.type !== 'GROUP'} value={formData.participantCount} onChange={e => setFormData({...formData, participantCount: e.target.value})} className="form-input" />
+            </div>
+          </div>
           
           <div style={{ display: 'flex', gap: '1rem' }}>
             <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
-              <label className="form-label">Capacity</label>
+              <label className="form-label">Capacity (Passes)</label>
               <input type="number" required min="1" value={formData.capacity} onChange={e => setFormData({...formData, capacity: e.target.value})} className="form-input" />
             </div>
             <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>

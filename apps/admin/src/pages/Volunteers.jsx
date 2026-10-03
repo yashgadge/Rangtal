@@ -7,11 +7,15 @@ import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
 import { motion } from 'framer-motion';
 import { ShieldCheck, Plus, Check } from 'lucide-react';
+import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
+import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 
 export default function Volunteers() {
+  const toast = useToast();
   const [volunteers, setVolunteers] = useState([]);
   const [filteredVolunteers, setFilteredVolunteers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -43,6 +47,7 @@ export default function Volunteers() {
 
   async function fetchVolunteers() {
     setLoading(true);
+    setError(null);
     try {
       const q = query(collection(db, 'volunteers'));
       const snap = await getDocs(q);
@@ -50,6 +55,8 @@ export default function Volunteers() {
       setVolunteers(vols);
     } catch (err) {
       console.error("Error fetching volunteers", err);
+      setError(err);
+      toast.error('Failed to load volunteers', normalizeError(err));
     } finally {
       setLoading(false);
     }
@@ -73,6 +80,7 @@ export default function Volunteers() {
 
   async function handleSave(e) {
     e.preventDefault();
+    const toastId = toast.loading('Creating volunteer...');
     try {
       const functions = getFunctions();
       const createVolunteer = httpsCallable(functions, 'createVolunteer');
@@ -88,14 +96,16 @@ export default function Volunteers() {
       
       setIsEditing(false);
       fetchVolunteers();
+      toast.update(toastId, 'success', 'Volunteer created successfully');
     } catch (err) {
       console.error("Error creating volunteer", err);
-      alert('Error saving volunteer: ' + err.message);
+      toast.update(toastId, 'error', 'Error creating volunteer', normalizeError(err));
     }
   }
 
   async function handleToggleStatus(vol, e) {
     if(e) e.stopPropagation();
+    const toastId = toast.loading('Updating status...');
     try {
       const functions = getFunctions();
       const disableVolunteer = httpsCallable(functions, 'disableVolunteer');
@@ -109,8 +119,10 @@ export default function Volunteers() {
       if (selectedVolunteer?.id === vol.id) {
          setSelectedVolunteer({...vol, status: vol.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'});
       }
+      toast.update(toastId, 'success', 'Status updated successfully');
     } catch (err) {
-      alert('Error updating status: ' + err.message);
+      console.error(err);
+      toast.update(toastId, 'error', 'Error updating status', normalizeError(err));
     }
   }
 
@@ -193,6 +205,7 @@ export default function Volunteers() {
           columns={columns} 
           data={filteredVolunteers} 
           loading={loading}
+          error={error}
           onRowClick={handleRowClick}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}

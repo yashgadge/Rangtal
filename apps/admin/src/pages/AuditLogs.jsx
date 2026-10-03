@@ -11,6 +11,7 @@ export default function AuditLogs() {
   const [logs, setLogs] = useState([]);
   const [filteredLogs, setFilteredLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLog, setSelectedLog] = useState(null);
@@ -34,13 +35,15 @@ export default function AuditLogs() {
 
   async function fetchLogs() {
     setLoading(true);
+    setError(null);
     try {
-      const q = query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(200));
+      const q = query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(100));
       const snap = await getDocs(q);
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setLogs(data);
     } catch (err) {
       console.error("Error fetching audit logs", err);
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -74,6 +77,7 @@ export default function AuditLogs() {
           columns={columns} 
           data={filteredLogs} 
           loading={loading}
+          error={error}
           onRowClick={setSelectedLog}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}

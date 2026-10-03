@@ -1,10 +1,11 @@
 import React from 'react';
-import { Search } from 'lucide-react';
+import { Search, AlertCircle } from 'lucide-react';
 
 export default function DataTable({ 
   columns, 
   data, 
   loading, 
+  error,
   onRowClick,
   searchPlaceholder,
   searchValue,
@@ -64,6 +65,15 @@ export default function DataTable({
                   ))}
                 </tr>
               ))
+            ) : error ? (
+              // Error State
+              <tr>
+                <td colSpan={columns.length} style={{ textAlign: 'center', padding: '3rem' }}>
+                  <AlertCircle size={48} color="var(--color-error)" style={{ margin: '0 auto 1rem', opacity: 0.8 }} />
+                  <div style={{ color: 'var(--color-error)', fontWeight: 600 }}>Error loading data</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>{error.message || String(error)}</div>
+                </td>
+              </tr>
             ) : data && data.length > 0 ? (
               data.map((row, i) => (
                 <tr 
@@ -79,9 +89,11 @@ export default function DataTable({
                 </tr>
               ))
             ) : (
+              // Empty State
               <tr>
-                <td colSpan={columns.length} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                  No records found.
+                <td colSpan={columns.length} style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: '1.2rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>NO RECORDS FOUND</div>
+                  <div>There is currently no data matching this view.</div>
                 </td>
               </tr>
             )}

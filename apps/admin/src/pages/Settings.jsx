@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import { motion } from 'framer-motion';
-import { Save, AlertTriangle } from 'lucide-react';
+import { Save, AlertTriangle, Database } from 'lucide-react';
+import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
+import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 
 export default function Settings() {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState('EVENT');
   const [settings, setSettings] = useState({
     EVENT: { eventName: 'Rangtal Garba Night', eventDate: '', location: '' },
@@ -15,6 +19,7 @@ export default function Settings() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [seeding, setSeeding] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -34,6 +39,7 @@ export default function Settings() {
       }
     } catch (err) {
       console.error("Error fetching settings", err);
+      toast.error('Load Failed', normalizeError(err));
     } finally {
       setLoading(false);
     }
@@ -41,15 +47,33 @@ export default function Settings() {
 
   async function handleSave() {
     setSaving(true);
+    const toastId = toast.loading('Saving settings...');
     try {
       const docRef = doc(db, 'eventSettings', 'global');
       await setDoc(docRef, settings, { merge: true });
-      alert("Settings saved successfully.");
+      toast.update(toastId, 'success', 'Settings saved successfully');
     } catch (err) {
       console.error(err);
-      alert("Error saving settings: " + err.message);
+      toast.update(toastId, 'error', 'Error saving settings', normalizeError(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSeedData() {
+    if (!window.confirm("This will initialize default packages and settings in the database. Existing data with the same IDs may be overwritten. Proceed?")) return;
+    setSeeding(true);
+    const toastId = toast.loading('Seeding database...');
+    try {
+      const seedDataFn = httpsCallable(functions, 'seedData');
+      const result = await seedDataFn();
+      toast.update(toastId, 'success', 'Database seeded successfully!', result.data.message || '');
+      fetchSettings(); // Refresh settings
+    } catch (err) {
+      console.error(err);
+      toast.update(toastId, 'error', 'Error seeding data', normalizeError(err));
+    } finally {
+      setSeeding(false);
     }
   }
 
@@ -76,9 +100,14 @@ export default function Settings() {
         title="Event Settings" 
         description="Global configuration for the Rangtal platform." 
         actions={
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-            <Save size={16} /> {saving ? 'Saving...' : 'Save All Settings'}
-          </button>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <button className="btn btn-secondary" onClick={handleSeedData} disabled={seeding}>
+              <Database size={16} /> {seeding ? 'Seeding...' : 'Initialize Data'}
+            </button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+              <Save size={16} /> {saving ? 'Saving...' : 'Save All Settings'}
+            </button>
+          </div>
         }
       />
 

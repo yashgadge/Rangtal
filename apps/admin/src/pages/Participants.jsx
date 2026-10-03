@@ -6,11 +6,15 @@ import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
 import { Download } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
+import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 
 export default function Participants() {
+  const toast = useToast();
   const [participants, setParticipants] = useState([]);
   const [filteredParts, setFilteredParts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedParticipant, setSelectedParticipant] = useState(null);
@@ -25,13 +29,17 @@ export default function Participants() {
 
   async function fetchParticipants() {
     setLoading(true);
+    setError(null);
     try {
-      const q = query(collection(db, 'participants'), limit(500));
+      // Ordered by a timestamp ideally, but lacking one, we just limit
+      const q = query(collection(db, 'participants'), limit(100));
       const snap = await getDocs(q);
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setParticipants(data);
     } catch (err) {
       console.error("Error fetching participants", err);
+      setError(err);
+      toast.error('Failed to load participants', normalizeError(err));
     } finally {
       setLoading(false);
     }
@@ -84,34 +92,21 @@ export default function Participants() {
         description="Manage all registered participants." 
         actions={
           <button className="btn btn-secondary" onClick={fetchParticipants}>
-            <Download size={16} /> Export
+            <Download size={16} /> Export Recent
           </button>
         }
       />
-
-      {/* Stats Strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-        {[
-          { label: 'Total', val: participants.length },
-          { label: 'Verified', val: participants.filter(p => p.verificationStatus === 'VERIFIED').length },
-          { label: 'Pending', val: participants.filter(p => p.verificationStatus !== 'VERIFIED' && p.verificationStatus !== 'REQUIRES_CORRECTION').length }
-        ].map(stat => (
-          <div key={stat.label} className="surface" style={{ padding: '1rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-heading)', color: 'var(--color-gold)' }}>{stat.val}</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{stat.label}</div>
-          </div>
-        ))}
-      </div>
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <DataTable 
           columns={columns} 
           data={filteredParts} 
           loading={loading}
+          error={error}
           onRowClick={setSelectedParticipant}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
-          searchPlaceholder="Search participants by name or ID..."
+          searchPlaceholder="Search recent participants by name or ID..."
         />
       </div>
 

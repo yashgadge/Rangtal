@@ -6,11 +6,15 @@ import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
 import { motion } from 'framer-motion';
 import { Building, Plus } from 'lucide-react';
+import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
+import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 
 export default function Colleges() {
+  const toast = useToast();
   const [colleges, setColleges] = useState([]);
   const [filteredColleges, setFilteredColleges] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -35,6 +39,7 @@ export default function Colleges() {
 
   async function fetchColleges() {
     setLoading(true);
+    setError(null);
     try {
       const q = query(collection(db, 'colleges'));
       const snap = await getDocs(q);
@@ -42,6 +47,8 @@ export default function Colleges() {
       setColleges(cols);
     } catch (err) {
       console.error("Error fetching colleges", err);
+      setError(err);
+      toast.error('Failed to load colleges', normalizeError(err));
     } finally {
       setLoading(false);
     }
@@ -63,6 +70,7 @@ export default function Colleges() {
 
   async function handleSave(e) {
     e.preventDefault();
+    const toastId = toast.loading('Saving college...');
     try {
       const colRef = doc(db, 'colleges', formData.id);
       await setDoc(colRef, {
@@ -72,9 +80,10 @@ export default function Colleges() {
       
       setIsEditing(false);
       fetchColleges();
+      toast.update(toastId, 'success', 'College saved successfully');
     } catch (err) {
       console.error("Error saving college", err);
-      alert('Error saving college: ' + err.message);
+      toast.update(toastId, 'error', 'Error saving college', normalizeError(err));
     }
   }
 
@@ -84,8 +93,10 @@ export default function Colleges() {
       const colRef = doc(db, 'colleges', colId);
       await updateDoc(colRef, { verified: !currentStatus });
       fetchColleges();
+      toast.success(currentStatus ? 'College disabled' : 'College enabled');
     } catch (err) {
-      alert('Error updating status: ' + err.message);
+      console.error(err);
+      toast.error('Error updating status', normalizeError(err));
     }
   }
 
@@ -158,6 +169,7 @@ export default function Colleges() {
           columns={columns} 
           data={filteredColleges} 
           loading={loading}
+          error={error}
           onRowClick={handleRowClick}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}

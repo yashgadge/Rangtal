@@ -21,6 +21,8 @@ exports.generatePass = passes.generatePass;
 
 const checkins = require("./api/checkins");
 exports.checkInParticipant = checkins.checkInParticipant;
+exports.checkInGroupMembers = checkins.checkInGroupMembers;
+exports.verifyPass = checkins.verifyPass;
 
 const verification = require("./api/verification");
 exports.approveVerification = verification.approveVerification;
@@ -43,13 +45,16 @@ exports.seedData = onCall(async (request) => {
   require("./shared/auth").requireAdmin(request);
   const db = getFirestore();
   await db.collection("packages").doc("pkg-season-pass").set({
-    active: true, price: 1499, capacity: 1000, soldCount: 0, name: "Season Pass", type: "SINGLE", description: "Access to all 9 nights of Navratri"
-  });
-  await db.collection("packages").doc("pkg-daily-pass").set({
-    active: true, price: 299, capacity: 5000, soldCount: 0, name: "Daily Pass", type: "SINGLE", description: "Valid for single day entry"
+    active: true, price: 349, capacity: 1000, soldCount: 0, name: "Single Pass", type: "SINGLE", participantCount: 1, description: "Valid for single person entry"
   });
   await db.collection("packages").doc("pkg-couple-pass").set({
-    active: true, price: 2499, capacity: 500, soldCount: 0, name: "Couple Pass", type: "COUPLE", description: "Access for two participants"
+    active: true, price: 549, capacity: 500, soldCount: 0, name: "Couple Pass", type: "COUPLE", participantCount: 2, description: "Access for one boy and one girl"
+  });
+  await db.collection("packages").doc("pkg-5-person").set({
+    active: true, price: 1499, capacity: 200, soldCount: 0, name: "5 Person Pass", type: "GROUP_5", participantCount: 5, description: "Group access for 5 participants"
+  });
+  await db.collection("packages").doc("pkg-11-person").set({
+    active: true, price: 2999, capacity: 50, soldCount: 0, name: "11 Person Pass", type: "GROUP_11", participantCount: 11, description: "Group access for 11 participants"
   });
   await db.collection("colleges").doc("col-jspm").set({
     verified: true, name: "JSPM University"

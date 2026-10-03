@@ -38,10 +38,15 @@ export default function Account() {
         const pSnap = await getDocs(pQuery);
         const participants = pSnap.docs.map(p => ({ id: p.id, ...p.data() }));
 
+        const passQuery = query(collection(db, 'passes'), where('registrationId', '==', doc.id));
+        const passSnap = await getDocs(passQuery);
+        const passes = passSnap.docs.map(p => ({ id: p.id, ...p.data() }));
+
         regs.push({
           id: doc.id,
           ...data,
-          participants
+          participants,
+          passes
         });
       }
       
@@ -126,27 +131,27 @@ export default function Account() {
                     <div className="status-pipeline" style={{ display: 'flex', gap: '1rem', marginBottom: '2.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
                       <StatusStep 
                         label="Documents" 
-                        status={reg.verificationStatus === 'VERIFIED' ? 'success' : (reg.verificationStatus === 'REQUIRES_CORRECTION' ? 'error' : 'pending')} 
+                        status={['VERIFIED', 'PASS_ISSUED'].includes(reg.status) ? 'success' : (reg.status === 'REQUIRES_CORRECTION' ? 'error' : 'pending')} 
                       />
                       <div style={{ width: '20px', height: '2px', background: 'rgba(255,255,255,0.2)', alignSelf: 'center', flexShrink: 0 }} />
                       <StatusStep 
                         label="Payment" 
-                        status={reg.paymentStatus === 'SUCCESS' ? 'success' : (reg.verificationStatus === 'VERIFIED' ? 'pending' : 'waiting')} 
+                        status={reg.paymentStatus === 'SUCCESS' || reg.status === 'PASS_ISSUED' ? 'success' : (['VERIFIED'].includes(reg.status) ? 'pending' : 'waiting')} 
                       />
                       <div style={{ width: '20px', height: '2px', background: 'rgba(255,255,255,0.2)', alignSelf: 'center', flexShrink: 0 }} />
                       <StatusStep 
                         label="Pass Issued" 
-                        status={reg.passIssued ? 'success' : 'waiting'} 
+                        status={reg.status === 'PASS_ISSUED' ? 'success' : 'waiting'} 
                       />
                     </div>
 
-                    {reg.verificationStatus === 'REQUIRES_CORRECTION' && reg.verificationNotes && (
+                    {reg.status === 'REQUIRES_CORRECTION' && (
                       <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '8px', padding: '1.5rem', marginBottom: '2rem' }}>
                         <h4 style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', fontSize: '1.1rem' }}>
                           <AlertCircle size={20} /> Action Required: Correction Requested
                         </h4>
-                        <p style={{ margin: 0, color: 'white', lineHeight: 1.5 }}>{reg.verificationNotes}</p>
-                        <button className="btn-secondary" style={{ marginTop: '1rem', borderColor: '#ef4444', color: '#ef4444' }}>Update Documents</button>
+                        <p style={{ margin: 0, color: 'white', lineHeight: 1.5 }}>Some participant documents require correction. Please review the details below and submit new documents.</p>
+                        <button className="btn-secondary" onClick={() => navigate('/account')} style={{ marginTop: '1rem', borderColor: '#ef4444', color: '#ef4444' }}>Update Documents</button>
                       </div>
                     )}
 
@@ -156,13 +161,31 @@ export default function Account() {
                           <User size={18} /> Participants
                         </h3>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                          {reg.participants?.map((p, index) => (
-                            <div key={p.id} style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', borderLeft: '3px solid var(--color-gold)' }}>
-                              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Participant {index + 1}</div>
-                              <div style={{ fontSize: '1.1rem', fontWeight: 500, color: 'white' }}>{p.fullName}</div>
-                              <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{p.gender}</div>
-                            </div>
-                          ))}
+                          {reg.participants?.map((p, index) => {
+                            const indPass = reg.passes?.find(pass => pass.participantId === p.id && !pass.isGroup);
+                            return (
+                              <div key={p.id} style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px', borderLeft: `3px solid ${p.verificationStatus === 'APPROVED' ? 'var(--color-success)' : p.verificationStatus === 'REQUIRES_CORRECTION' ? 'var(--color-error)' : 'var(--color-gold)'}` }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Participant {index + 1}</div>
+                                  <div style={{ fontSize: '0.75rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.1)', color: p.verificationStatus === 'APPROVED' ? 'var(--color-success)' : 'var(--text-secondary)' }}>
+                                    {p.verificationStatus}
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: '1.1rem', fontWeight: 500, color: 'white' }}>{p.fullName}</div>
+                                <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>{p.gender}</div>
+                                {p.correctionReason && p.verificationStatus === 'REQUIRES_CORRECTION' && (
+                                  <div style={{ fontSize: '0.85rem', color: 'var(--color-error)', marginTop: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', padding: '0.5rem', borderRadius: '4px' }}>
+                                    Reason: {p.correctionReason}
+                                  </div>
+                                )}
+                                {indPass && (
+                                  <button className="btn-secondary" onClick={() => navigate(`/account/pass/${indPass.id}`)} style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem', marginTop: '0.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                    <Ticket size={14} /> View Individual Pass
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -191,16 +214,23 @@ export default function Account() {
                     </div>
 
                     <div style={{ marginTop: '2.5rem', paddingTop: '2rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                      {reg.passIssued ? (
+                      {reg.status === 'PASS_ISSUED' ? (
                         <div style={{ textAlign: 'center', padding: '2rem', background: 'radial-gradient(circle, rgba(255,215,0,0.1) 0%, rgba(0,0,0,0) 70%)' }}>
-                          <h3 style={{ fontSize: '1.5rem', color: 'var(--color-gold)', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)' }}>Your Pass is Ready</h3>
+                          <h3 style={{ fontSize: '1.5rem', color: 'var(--color-gold)', marginBottom: '0.5rem', fontFamily: 'var(--font-heading)' }}>Passes are Ready</h3>
                           <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>Show your digital pass at the entrance.</p>
-                          <button className="btn-primary" onClick={() => navigate(`/account/pass/${reg.id}`)} style={{ margin: '0 auto' }}>
-                            <Ticket size={18} /> View Digital Pass
-                          </button>
+                          {reg.passes?.find(p => p.isGroup) && (
+                            <button className="btn-primary" onClick={() => navigate(`/account/pass/${reg.passes.find(p => p.isGroup).id}`)} style={{ margin: '0 auto' }}>
+                              <Ticket size={18} /> View Group Pass
+                            </button>
+                          )}
+                          {!reg.passes?.find(p => p.isGroup) && reg.passes?.length > 0 && (
+                            <button className="btn-primary" onClick={() => navigate(`/account/pass/${reg.passes[0].id}`)} style={{ margin: '0 auto' }}>
+                              <Ticket size={18} /> View Pass
+                            </button>
+                          )}
                         </div>
                       ) : (
-                        reg.verificationStatus === 'VERIFIED' && (!reg.paymentStatus || reg.paymentStatus === 'PENDING') && (
+                        reg.status === 'VERIFIED' && (!reg.paymentStatus || reg.paymentStatus === 'PENDING') && (
                           <div style={{ textAlign: 'center', padding: '2rem', background: 'rgba(255,255,255,0.03)', borderRadius: '16px' }}>
                             <h3 style={{ fontSize: '1.5rem', color: 'white', marginBottom: '0.5rem' }}>Complete Payment</h3>
                             <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>Your documents are verified. Complete the payment to receive your pass.</p>
@@ -211,7 +241,7 @@ export default function Account() {
                         )
                       )}
                       
-                      {reg.verificationStatus !== 'VERIFIED' && !reg.passIssued && (
+                      {reg.status !== 'VERIFIED' && reg.status !== 'PASS_ISSUED' && reg.status !== 'REQUIRES_CORRECTION' && (
                         <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                           <Clock size={24} style={{ opacity: 0.5, margin: '0 auto 0.5rem' }} />
                           <p>Your registration is currently under review by our team.</p>

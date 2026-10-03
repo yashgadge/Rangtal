@@ -6,16 +6,19 @@ import { ref, uploadBytesResumable } from 'firebase/storage';
 import { db, auth, functions, storage } from '../firebase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ChevronRight, Upload, AlertCircle, Package, User, Building, FileText, CheckCircle2 } from 'lucide-react';
+import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
+import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 import './Register.css';
 
 const STEPS = [
   { id: 1, label: 'Package', icon: Package },
-  { id: 2, label: 'Details', icon: User },
+  { id: 2, label: 'Profiles', icon: User },
   { id: 3, label: 'Review', icon: CheckCircle2 },
   { id: 4, label: 'Documents', icon: FileText },
 ];
 
 export default function Register() {
+  const toast = useToast();
   const [user, setUser] = useState(null);
   const [packages, setPackages] = useState([]);
   const [colleges, setColleges] = useState([]);
@@ -26,17 +29,17 @@ export default function Register() {
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [selectedCollege, setSelectedCollege] = useState('');
   
-  const [participant1, setParticipant1] = useState({ fullName: '', gender: '' });
-  const [participant2, setParticipant2] = useState({ fullName: '', gender: '' });
+  // Array of participant objects
+  const [participants, setParticipants] = useState([]);
+  const [currentParticipantIndex, setCurrentParticipantIndex] = useState(0);
+  
+  // Documents state
+  const [files, setFiles] = useState([]);
   
   const [submitting, setSubmitting] = useState(false);
   const [registrationResult, setRegistrationResult] = useState(null);
   const [error, setError] = useState(null);
 
-  // Upload State
-  const [file1, setFile1] = useState(null);
-  const [file2, setFile2] = useState(null);
-  
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -59,6 +62,7 @@ export default function Register() {
       setColleges(colSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (err) {
       console.error("Error loading registration data", err);
+      toast.error('Data Load Failed', normalizeError(err));
     } finally {
       setLoading(false);
     }
@@ -68,35 +72,75 @@ export default function Register() {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
+      toast.success('Signed in successfully');
     } catch (error) {
       console.error("Error signing in", error);
+      toast.error('Sign In Failed', normalizeError(error));
+    }
+  };
+
+  const handlePackageSelect = (pkg) => {
+    setSelectedPackage(pkg);
+    const count = pkg.participantCount || 1;
+    // Initialize participants array based on package
+    const initialParticipants = Array.from({ length: count }, () => ({ fullName: '', gender: '' }));
+    setParticipants(initialParticipants);
+    setFiles(Array(count).fill(null));
+  };
+
+  const handleParticipantChange = (field, value) => {
+    const newParts = [...participants];
+    newParts[currentParticipantIndex] = { ...newParts[currentParticipantIndex], [field]: value };
+    setParticipants(newParts);
+  };
+
+  const nextParticipant = () => {
+    if (selectedPackage?.type === 'COUPLE' && currentParticipantIndex === 1) {
+      const genders = [participants[0].gender, participants[1].gender];
+      if (!genders.includes('M') || !genders.includes('F')) {
+        toast.warning('Invalid Participants', "A Couple Pass requires exactly one Male and one Female participant.");
+        return;
+      }
+    }
+
+    if (currentParticipantIndex < participants.length - 1) {
+      setCurrentParticipantIndex(currentParticipantIndex + 1);
+    } else {
+      setStep(3); // Go to review
+    }
+  };
+
+  const prevParticipant = () => {
+    if (currentParticipantIndex > 0) {
+      setCurrentParticipantIndex(currentParticipantIndex - 1);
+    } else {
+      setStep(1); // Go back to package selection
     }
   };
 
   const handleSubmitRegistration = async () => {
     setSubmitting(true);
     setError(null);
+    const toastId = toast.loading('Saving details...', 'Please do not close this window');
     try {
       const createRegistration = httpsCallable(functions, 'createRegistration');
       
-      const participants = [participant1];
-      if (selectedPackage.type === 'COUPLE') {
-        participants.push(participant2);
-      }
-
       const response = await createRegistration({
         packageId: selectedPackage.id,
         collegeId: selectedCollege,
-        type: selectedPackage.type || (participants.length > 1 ? 'COUPLE' : 'SINGLE'),
+        type: selectedPackage.type,
         participants: participants,
         formFields: {}
       });
       
       setRegistrationResult(response.data);
+      toast.update(toastId, 'success', 'Details Saved', 'Proceed to document upload');
       setStep(4);
     } catch (err) {
       console.error("Registration failed", err);
-      setError(err.message || "An error occurred while creating registration.");
+      const msg = normalizeError(err);
+      setError(msg);
+      toast.update(toastId, 'error', 'Save Failed', msg);
     } finally {
       setSubmitting(false);
     }
@@ -105,44 +149,38 @@ export default function Register() {
   const handleUploadAndSubmit = async () => {
     setSubmitting(true);
     setError(null);
+    const toastId = toast.loading('Uploading documents...', 'This may take a moment');
     try {
       const regId = registrationResult.registrationId;
       const uid = user.uid;
       const documents = [];
       
-      if (file1) {
-        const path = `participants/${uid}/verification/${regId}_p1_${file1.name}`;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file) continue;
+        
+        const path = `participants/${uid}/verification/${regId}_p${i+1}_${file.name}`;
         const fileRef = ref(storage, path);
-        await uploadBytesResumable(fileRef, file1);
+        await uploadBytesResumable(fileRef, file);
         documents.push({
-          participantIndex: 0,
-          filename: file1.name,
-          contentType: file1.type,
-          size: file1.size,
+          participantIndex: i,
+          filename: file.name,
+          contentType: file.type,
+          size: file.size,
           path: path
-        });
-      }
-      
-      if (selectedPackage?.type === 'COUPLE' && file2) {
-        const path2 = `participants/${uid}/verification/${regId}_p2_${file2.name}`;
-        const fileRef2 = ref(storage, path2);
-        await uploadBytesResumable(fileRef2, file2);
-        documents.push({
-          participantIndex: 1,
-          filename: file2.name,
-          contentType: file2.type,
-          size: file2.size,
-          path: path2
         });
       }
       
       const submitRegistration = httpsCallable(functions, 'submitRegistration');
       await submitRegistration({ registrationId: regId, documents });
       
+      toast.update(toastId, 'success', 'Registration Complete', 'Your documents are under review');
       setStep(5);
     } catch (err) {
       console.error("Submission failed", err);
-      setError(err.message || "Failed to submit documents and finalize registration.");
+      const msg = normalizeError(err);
+      setError(msg);
+      toast.update(toastId, 'error', 'Upload Failed', msg);
     } finally {
       setSubmitting(false);
     }
@@ -208,7 +246,7 @@ export default function Register() {
         <div className="register-container">
           <div className="header-row" style={{ marginBottom: '1rem' }}>
             <h1 className="text-title" style={{ fontFamily: 'var(--font-heading)', margin: 0, fontSize: '2rem' }}>Registration</h1>
-            <button onClick={() => signOut(auth)} className="logout-btn">Cancel</button>
+            <button onClick={() => { signOut(auth); toast.info('Signed out'); }} className="logout-btn">Cancel</button>
           </div>
           
           {step < 5 && renderStepIndicator()}
@@ -226,7 +264,7 @@ export default function Register() {
                         <div 
                           key={pkg.id} 
                           className={`card-pkg ${selectedPackage?.id === pkg.id ? 'selected' : ''}`}
-                          onClick={() => setSelectedPackage(pkg)}
+                          onClick={() => handlePackageSelect(pkg)}
                           style={{
                             background: selectedPackage?.id === pkg.id ? 'rgba(255, 215, 0, 0.1)' : 'rgba(255,255,255,0.03)',
                             border: `1px solid ${selectedPackage?.id === pkg.id ? 'var(--color-gold)' : 'rgba(255,255,255,0.1)'}`,
@@ -242,14 +280,14 @@ export default function Register() {
                           </div>
                           <div style={{ fontSize: '2rem', fontWeight: 'bold', fontFamily: 'var(--font-heading)', marginBottom: '1rem' }}>₹{pkg.price}</div>
                           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem', lineHeight: 1.5 }}>{pkg.description}</p>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pkg.capacity - (pkg.soldCount || 0)} spots remaining</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--color-success)' }}>{pkg.participantCount} Participant{pkg.participantCount > 1 ? 's' : ''}</div>
                         </div>
                       ))}
                     </div>
                   )}
 
                   <div className="btn-row btn-row-right">
-                    <button disabled={!selectedPackage} onClick={() => setStep(2)} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <button disabled={!selectedPackage} onClick={() => { setStep(2); setCurrentParticipantIndex(0); }} className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       Continue <ChevronRight size={18} />
                     </button>
                   </div>
@@ -258,79 +296,63 @@ export default function Register() {
 
               {step === 2 && (
                 <motion.div key="step2" {...pageTransition}>
-                  <h2 className="text-subtitle">Participant Details</h2>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <h2 className="text-subtitle" style={{ margin: 0 }}>Participant Details</h2>
+                    <div className="badge badge-neutral" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem', color: 'var(--color-gold)', background: 'rgba(255,215,0,0.1)' }}>
+                      PERSON {currentParticipantIndex + 1} OF {participants.length}
+                    </div>
+                  </div>
                   
-                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '2rem', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '2rem' }}>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="text-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'white' }}>
-                        <Building size={16} color="var(--color-gold)" /> Select Your College
-                      </label>
-                      <select className="form-select" value={selectedCollege} onChange={(e) => setSelectedCollege(e.target.value)} style={{ marginTop: '1rem', padding: '1rem', fontSize: '1rem' }}>
-                        <option value="" disabled>Select College / Institution...</option>
-                        {colleges.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
+                  {/* Progress bar */}
+                  <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', marginBottom: '2rem', overflow: 'hidden' }}>
+                    <motion.div 
+                      initial={{ width: `${(currentParticipantIndex / participants.length) * 100}%` }}
+                      animate={{ width: `${((currentParticipantIndex + 1) / participants.length) * 100}%` }}
+                      style={{ height: '100%', background: 'var(--color-gold)' }}
+                    />
+                  </div>
+
+                  {currentParticipantIndex === 0 && (
+                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '2rem', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '2rem' }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="text-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'white' }}>
+                          <Building size={16} color="var(--color-gold)" /> Select Your College
+                        </label>
+                        <select className="form-select" value={selectedCollege} onChange={(e) => setSelectedCollege(e.target.value)} style={{ marginTop: '1rem', padding: '1rem', fontSize: '1rem' }}>
+                          <option value="" disabled>Select College / Institution...</option>
+                          {colleges.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ background: 'rgba(255,255,255,0.03)', padding: '2rem', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    <h3 style={{ fontSize: '1.25rem', marginBottom: '1.5rem', color: 'var(--color-gold)' }}>Profile Information</h3>
+                    <div className="form-group">
+                      <label className="text-label">Full Name</label>
+                      <input type="text" className="form-input" value={participants[currentParticipantIndex].fullName} onChange={(e) => handleParticipantChange('fullName', e.target.value)} placeholder="As per ID" />
+                    </div>
+                    <div className="form-group">
+                      <label className="text-label">Gender</label>
+                      <select className="form-select" value={participants[currentParticipantIndex].gender} onChange={(e) => handleParticipantChange('gender', e.target.value)}>
+                        <option value="" disabled>Select...</option>
+                        <option value="M">Male</option>
+                        <option value="F">Female</option>
+                        <option value="O">Other</option>
                       </select>
                     </div>
                   </div>
 
-                  <div className="grid-2">
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '2rem', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                      <h3 style={{ fontSize: '1.25rem', marginBottom: '1.5rem', color: 'var(--color-gold)' }}>Participant 1</h3>
-                      <div className="form-group">
-                        <label className="text-label">Full Name</label>
-                        <input type="text" className="form-input" value={participant1.fullName} onChange={(e) => setParticipant1({...participant1, fullName: e.target.value})} placeholder="As per ID" />
-                      </div>
-                      <div className="form-group">
-                        <label className="text-label">Gender</label>
-                        <select className="form-select" value={participant1.gender} onChange={(e) => setParticipant1({...participant1, gender: e.target.value})}>
-                          <option value="" disabled>Select...</option>
-                          <option value="M">Male</option>
-                          <option value="F">Female</option>
-                          <option value="O">Other</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {selectedPackage?.type === 'COUPLE' && (
-                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '2rem', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        <h3 style={{ fontSize: '1.25rem', marginBottom: '1.5rem', color: 'var(--color-gold)' }}>Participant 2</h3>
-                        <div className="form-group">
-                          <label className="text-label">Full Name</label>
-                          <input type="text" className="form-input" value={participant2.fullName} onChange={(e) => setParticipant2({...participant2, fullName: e.target.value})} placeholder="As per ID" />
-                        </div>
-                        <div className="form-group">
-                          <label className="text-label">Gender</label>
-                          <select className="form-select" value={participant2.gender} onChange={(e) => setParticipant2({...participant2, gender: e.target.value})}>
-                            <option value="" disabled>Select...</option>
-                            <option value="M">Male</option>
-                            <option value="F">Female</option>
-                            <option value="O">Other</option>
-                          </select>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="terms-row" style={{ marginTop: '2rem' }}>
-                    <input type="checkbox" id="terms" onChange={(e) => {
-                      const btn = document.getElementById("review-btn");
-                      if (btn) btn.disabled = !e.target.checked;
-                    }} />
-                    <label htmlFor="terms" style={{ color: 'var(--text-secondary)' }}>
-                      I verify that all information is accurate and matches our physical IDs. I agree to the <a href="#" style={{color: 'var(--color-gold)'}}>Terms of Entry</a>.
-                    </label>
-                  </div>
-
-                  <div className="btn-row">
-                    <button onClick={() => setStep(1)} className="btn-secondary">Back</button>
+                  <div className="btn-row" style={{ marginTop: '2rem' }}>
+                    <button onClick={prevParticipant} className="btn-secondary">Back</button>
                     <button 
-                      id="review-btn" 
-                      disabled={!selectedCollege || !participant1.fullName || !participant1.gender || (selectedPackage?.type === 'COUPLE' && (!participant2.fullName || !participant2.gender))}
-                      onClick={() => setStep(3)} 
+                      disabled={(currentParticipantIndex === 0 && !selectedCollege) || !participants[currentParticipantIndex].fullName || !participants[currentParticipantIndex].gender}
+                      onClick={nextParticipant} 
                       className="btn-primary"
                     >
-                      Review Registration
+                      {currentParticipantIndex < participants.length - 1 ? 'Save & Continue' : 'Review Registration'}
                     </button>
                   </div>
                 </motion.div>
@@ -358,25 +380,32 @@ export default function Register() {
                     </div>
 
                     <div className="grid-2">
-                      <div>
-                        <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Participant 1</div>
-                        <div style={{ fontSize: '1.1rem' }}>{participant1.fullName} ({participant1.gender})</div>
-                      </div>
-                      {selectedPackage?.type === 'COUPLE' && (
-                        <div>
-                          <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Participant 2</div>
-                          <div style={{ fontSize: '1.1rem' }}>{participant2.fullName} ({participant2.gender})</div>
+                      {participants.map((p, idx) => (
+                        <div key={idx} style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '8px' }}>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--color-gold)', marginBottom: '0.25rem', textTransform: 'uppercase' }}>Person {idx + 1}</div>
+                          <div style={{ fontSize: '1.1rem' }}>{p.fullName}</div>
+                          <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>Gender: {p.gender}</div>
                         </div>
-                      )}
+                      ))}
                     </div>
                   </div>
 
-                  {error && <div className="error-msg" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', color: '#ef4444' }}><AlertCircle size={18} /> {error}</div>}
+                  <div className="terms-row" style={{ marginTop: '2rem', marginBottom: '2rem' }}>
+                    <input type="checkbox" id="terms" onChange={(e) => {
+                      const btn = document.getElementById("confirm-btn");
+                      if (btn) btn.disabled = !e.target.checked || submitting;
+                    }} />
+                    <label htmlFor="terms" style={{ color: 'var(--text-secondary)' }}>
+                      I verify that all information is accurate and matches physical IDs. I agree to the <a href="#" style={{color: 'var(--color-gold)'}}>Terms of Entry</a>.
+                    </label>
+                  </div>
+
+                  {error && <div className="error-msg" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', color: '#ef4444', marginBottom: '1.5rem' }}><AlertCircle size={18} /> {error}</div>}
 
                   <div className="btn-row">
-                    <button onClick={() => setStep(2)} disabled={submitting} className="btn-secondary">Edit Details</button>
-                    <button className="btn-primary" disabled={submitting} onClick={handleSubmitRegistration}>
-                      {submitting ? 'Processing...' : 'Confirm Details'}
+                    <button onClick={() => { setStep(2); setCurrentParticipantIndex(participants.length - 1); }} disabled={submitting} className="btn-secondary">Edit Details</button>
+                    <button id="confirm-btn" className="btn-primary" disabled={true} onClick={handleSubmitRegistration}>
+                      {submitting ? 'Processing...' : 'Confirm Registration'}
                     </button>
                   </div>
                 </motion.div>
@@ -385,39 +414,34 @@ export default function Register() {
               {step === 4 && registrationResult && (
                 <motion.div key="step4" {...pageTransition}>
                   <h2 className="text-subtitle">ID Verification Upload</h2>
-                  <p className="text-body">Please upload clear photos or PDFs of the college ID / Govt ID for all participants.</p>
+                  <p className="text-body" style={{ marginBottom: '2rem' }}>Please upload clear photos or PDFs of the college ID / Govt ID for all participants.</p>
                   
-                  <div className="grid-2" style={{ marginTop: '2rem' }}>
-                    <div style={{ background: 'rgba(255,255,255,0.03)', padding: '2rem', borderRadius: '16px', border: '1px dashed rgba(255,255,255,0.2)', textAlign: 'center' }}>
-                      <h3 style={{ fontSize: '1.1rem', marginBottom: '1.5rem', color: 'var(--color-gold)' }}>Participant 1: {participant1.fullName}</h3>
-                      <label style={{ display: 'block', padding: '2rem', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
-                        <Upload size={32} color={file1 ? 'var(--color-success)' : 'var(--text-muted)'} style={{ margin: '0 auto 1rem' }} />
-                        <span style={{ display: 'block', color: file1 ? 'var(--color-success)' : 'white' }}>{file1 ? file1.name : 'Select File'}</span>
-                        <input type="file" onChange={(e) => setFile1(e.target.files[0])} style={{ display: 'none' }} accept="image/*,.pdf" />
-                      </label>
-                    </div>
-                    
-                    {selectedPackage?.type === 'COUPLE' && (
-                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '2rem', borderRadius: '16px', border: '1px dashed rgba(255,255,255,0.2)', textAlign: 'center' }}>
-                        <h3 style={{ fontSize: '1.1rem', marginBottom: '1.5rem', color: 'var(--color-gold)' }}>Participant 2: {participant2.fullName}</h3>
-                        <label style={{ display: 'block', padding: '2rem', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
-                          <Upload size={32} color={file2 ? 'var(--color-success)' : 'var(--text-muted)'} style={{ margin: '0 auto 1rem' }} />
-                          <span style={{ display: 'block', color: file2 ? 'var(--color-success)' : 'white' }}>{file2 ? file2.name : 'Select File'}</span>
-                          <input type="file" onChange={(e) => setFile2(e.target.files[0])} style={{ display: 'none' }} accept="image/*,.pdf" />
+                  <div className="grid-2" style={{ marginTop: '1rem' }}>
+                    {participants.map((p, idx) => (
+                      <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', padding: '2rem', borderRadius: '16px', border: '1px dashed rgba(255,255,255,0.2)', textAlign: 'center' }}>
+                        <h3 style={{ fontSize: '1.1rem', marginBottom: '1.5rem', color: 'var(--color-gold)' }}>Person {idx + 1}: {p.fullName}</h3>
+                        <label style={{ display: 'block', padding: '1.5rem', cursor: 'pointer', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                          <Upload size={32} color={files[idx] ? 'var(--color-success)' : 'var(--text-muted)'} style={{ margin: '0 auto 1rem' }} />
+                          <span style={{ display: 'block', color: files[idx] ? 'var(--color-success)' : 'white' }}>{files[idx] ? files[idx].name : 'Select File'}</span>
+                          <input type="file" onChange={(e) => {
+                            const newFiles = [...files];
+                            newFiles[idx] = e.target.files[0];
+                            setFiles(newFiles);
+                          }} style={{ display: 'none' }} accept="image/*,.pdf" />
                         </label>
                       </div>
-                    )}
+                    ))}
                   </div>
                   
                   {error && <div className="error-msg" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', color: '#ef4444', marginTop: '1.5rem' }}><AlertCircle size={18} /> {error}</div>}
 
-                  <div className="btn-row btn-row-right">
+                  <div className="btn-row btn-row-right" style={{ marginTop: '2rem' }}>
                     <button 
                       className="btn-primary"
-                      disabled={submitting || !file1 || (selectedPackage?.type === 'COUPLE' && !file2)}
+                      disabled={submitting || files.some(f => !f)}
                       onClick={handleUploadAndSubmit}
                     >
-                      {submitting ? 'Uploading Documents...' : 'Submit Registration'}
+                      {submitting ? 'Uploading Documents...' : 'Submit Documents'}
                     </button>
                   </div>
                 </motion.div>
@@ -433,7 +457,7 @@ export default function Register() {
                   
                   <div style={{ background: 'rgba(255,255,255,0.05)', padding: '2rem', borderRadius: '16px', maxWidth: '500px', margin: '0 auto 3rem' }}>
                     <p style={{ color: 'var(--text-secondary)', margin: 0, lineHeight: 1.6 }}>
-                      Your documents have been submitted to the review queue. You can track your verification status in your account dashboard. Once verified, you will be able to proceed to payment.
+                      Your documents have been submitted to the review queue. You can track verification status for each member in your account dashboard.
                     </p>
                   </div>
                   

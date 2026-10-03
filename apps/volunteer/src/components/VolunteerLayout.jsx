@@ -2,41 +2,32 @@ import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import './VolunteerLayout.css';
+import { ScanLine, LogOut } from 'lucide-react';
 
 export default function VolunteerLayout() {
-  const { user, volunteerData, permissions, logout } = useAuth();
+  const { user, volunteerData, logout } = useAuth();
 
   return (
-    <div className="volunteer-layout">
-      <header className="volunteer-header">
-        <div className="brand">SCANNER</div>
-        <div className="user-info">
-          <span>{volunteerData?.name || user?.email}</span>
-          <button className="logout-btn" onClick={logout}>Sign Out</button>
-        </div>
-      </header>
+    <div className="volunteer-layout" style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#050505', color: 'white' }}>
       
-      <main className="volunteer-main">
+      <main className="volunteer-main" style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         <Outlet />
       </main>
       
-      <nav className="bottom-nav">
-        <NavLink to="/scanner" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-          <div className="icon">📷</div>
-          <span>Scan</span>
+      <nav className="bottom-nav" style={{ 
+        display: 'flex', justifyContent: 'space-around', padding: '1rem', 
+        background: 'var(--bg-elevated)', borderTop: '1px solid rgba(255,255,255,0.05)',
+        zIndex: 50
+      }}>
+        <NavLink to="/scanner" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)', textDecoration: 'none' }}>
+          <ScanLine size={24} />
+          <span style={{ fontSize: '0.75rem' }}>Scan Pass</span>
         </NavLink>
-        <NavLink to="/lookup" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-          <div className="icon">🔍</div>
-          <span>Lookup</span>
-        </NavLink>
-        <NavLink to="/history" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-          <div className="icon">📋</div>
-          <span>History</span>
-        </NavLink>
-        <NavLink to="/profile" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'}>
-          <div className="icon">👤</div>
-          <span>Profile</span>
-        </NavLink>
+        
+        <button onClick={logout} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: 'var(--color-error)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
+          <LogOut size={24} />
+          <span style={{ fontSize: '0.75rem' }}>Sign Out</span>
+        </button>
       </nav>
     </div>
   );

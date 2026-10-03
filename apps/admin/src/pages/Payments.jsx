@@ -11,6 +11,7 @@ export default function Payments() {
   const [payments, setPayments] = useState([]);
   const [filteredPayments, setFilteredPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPayment, setSelectedPayment] = useState(null);
@@ -34,13 +35,15 @@ export default function Payments() {
 
   async function fetchPayments() {
     setLoading(true);
+    setError(null);
     try {
-      const q = query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(150));
+      const q = query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(100));
       const snap = await getDocs(q);
       const pData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setPayments(pData);
     } catch (err) {
       console.error("Error fetching payments", err);
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -66,37 +69,24 @@ export default function Payments() {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ padding: '2rem', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <PageHeader 
         title="Payment Logs" 
-        description="Monitor financial transactions. Note: Razorpay integration is currently deferred." 
+        description="Monitor financial transactions." 
         actions={
           <button className="btn btn-secondary" onClick={fetchPayments}>
-            <Download size={16} /> Export
+            <Download size={16} /> Export Recent
           </button>
         }
       />
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-        {[
-          { label: 'Expected Revenue', val: '₹0' }, // Deferred, so real revenue is 0
-          { label: 'Successful', val: payments.filter(p => p.status === 'SUCCESS').length },
-          { label: 'Pending', val: payments.filter(p => p.status === 'PENDING').length },
-          { label: 'Failed', val: payments.filter(p => p.status === 'FAILED').length }
-        ].map(stat => (
-          <div key={stat.label} className="surface" style={{ padding: '1rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-heading)', color: 'var(--color-gold)' }}>{stat.val}</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{stat.label}</div>
-          </div>
-        ))}
-      </div>
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <DataTable 
           columns={columns} 
           data={filteredPayments} 
           loading={loading}
+          error={error}
           onRowClick={setSelectedPayment}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
-          searchPlaceholder="Search by Payment ID, Name, or Registration ID..."
+          searchPlaceholder="Search recent payments by Payment ID, Name, or Registration ID..."
         />
       </div>
 
@@ -128,20 +118,13 @@ export default function Payments() {
                   <div style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{selectedPayment.registrationId}</div>
                 </div>
                 <div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Reference (Razorpay ID)</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Reference</div>
                   <div style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{selectedPayment.referenceId || 'N/A'}</div>
                 </div>
                 <div>
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Timestamp</div>
                   <div>{selectedPayment.createdAt?.toDate().toLocaleString()}</div>
                 </div>
-              </div>
-            </div>
-            
-            <div className="surface-flat" style={{ padding: '1.25rem' }}>
-              <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Event History</h4>
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                Webhook and state transition logs will appear here.
               </div>
             </div>
           </div>

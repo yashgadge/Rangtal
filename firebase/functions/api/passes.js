@@ -32,11 +32,11 @@ exports.generatePass = onCall(async (request) => {
         throw new HttpsError("failed-precondition", "Payment must be successful to generate a pass.");
       }
 
-      // Check if a pass already exists
+      // Check if passes already exist
       const passesRef = db.collection("passes").where("registrationId", "==", registrationId).where("status", "==", "ACTIVE");
       const passesSnap = await t.get(passesRef);
       if (!passesSnap.empty) {
-        return { success: true, passId: passesSnap.docs[0].id, alreadyGenerated: true };
+        return { success: true, alreadyGenerated: true };
       }
 
       // Fetch participants for this registration to create pass records for them
@@ -44,17 +44,39 @@ exports.generatePass = onCall(async (request) => {
       const partsSnap = await t.get(partsRef);
       
       const passIds = [];
+      const participantCount = regData.participantCount || partsSnap.docs.length;
+      
+      // If group, generate one GROUP pass
+      if (participantCount > 1) {
+        const groupPassRef = db.collection("passes").doc();
+        const secureCode = crypto.randomBytes(16).toString('hex');
+        t.set(groupPassRef, {
+          id: groupPassRef.id,
+          registrationId,
+          uid: regData.uid,
+          secureCode,
+          status: "ACTIVE",
+          isGroup: true,
+          participantCount,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp()
+        });
+        passIds.push(groupPassRef.id);
+      }
+      
+      // Generate individual passes
       for (const partDoc of partsSnap.docs) {
         const passRef = db.collection("passes").doc();
-        const secureCode = crypto.randomBytes(16).toString('hex'); // Un-guessable opaque identifier
+        const secureCode = crypto.randomBytes(16).toString('hex'); 
         
         t.set(passRef, {
           id: passRef.id,
           registrationId,
           participantId: partDoc.id,
           uid: regData.uid,
-          secureCode, // The QR code will just contain this string or a hash
+          secureCode, 
           status: "ACTIVE",
+          isGroup: false,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp()
         });

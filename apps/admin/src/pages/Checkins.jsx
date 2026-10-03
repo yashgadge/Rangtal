@@ -9,6 +9,7 @@ import { RefreshCw, Users, ShieldCheck, Ticket } from 'lucide-react';
 export default function Checkins() {
   const [checkins, setCheckins] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredCheckins, setFilteredCheckins] = useState([]);
   
@@ -46,13 +47,15 @@ export default function Checkins() {
 
   async function fetchCheckins() {
     setLoading(true);
+    setError(null);
     try {
-      const q = query(collection(db, 'checkins'), orderBy('timestamp', 'desc'), limit(150));
+      const q = query(collection(db, 'checkins'), orderBy('timestamp', 'desc'), limit(100));
       const snap = await getDocs(q);
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setCheckins(data);
     } catch (err) {
       console.error("Error fetching checkins", err);
+      setError(err);
     } finally {
       setLoading(false);
     }
@@ -130,6 +133,7 @@ export default function Checkins() {
           columns={columns} 
           data={filteredCheckins} 
           loading={loading}
+          error={error}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
           searchPlaceholder="Search participant, pass, or volunteer..."

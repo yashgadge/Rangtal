@@ -1,15 +1,18 @@
 import React, { useEffect } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { Preload } from '@react-three/drei';
-
 import Hero from '../components/experience/Hero.jsx';
 import EventInfo from '../components/experience/EventInfo.jsx';
 import Passes from '../components/experience/Passes.jsx';
-import Scene3D from '../components/3d/Scene3D.jsx';
 import CustomCursor from '../components/ui/CustomCursor.jsx';
 import '../components/experience/Scenes.css';
+import { motion, useScroll, useTransform } from 'framer-motion';
 
 export default function Home() {
+  const { scrollY } = useScroll();
+  
+  // Parallax effects for background layers
+  const bg1Y = useTransform(scrollY, [0, 1000], [0, 150]);
+  const bg2Y = useTransform(scrollY, [0, 1000], [0, 50]);
+
   useEffect(() => {
     document.body.classList.add('custom-cursor');
     return () => {
@@ -18,23 +21,30 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="app-container">
+    <div className="app-container" style={{ position: 'relative', overflow: 'hidden', backgroundColor: '#050505', color: 'white' }}>
       <CustomCursor />
       
-      {/* Background Decor Layer */}
-      <img src="/assets/garba_dancers.png" alt="" className="bg-dancer-1" />
-      <img src="/assets/garba_dancers_2.png" alt="" className="bg-dancer-2" />
+      {/* Background Decor Layer - CSS Depth instead of WebGL */}
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' }}>
+        {/* Glow Effects */}
+        <div style={{ position: 'absolute', top: '10%', left: '10%', width: '50vw', height: '50vw', background: 'radial-gradient(circle, rgba(255, 215, 0, 0.05) 0%, transparent 70%)', borderRadius: '50%', filter: 'blur(60px)' }} />
+        <div style={{ position: 'absolute', bottom: '10%', right: '10%', width: '60vw', height: '60vw', background: 'radial-gradient(circle, rgba(255, 107, 0, 0.05) 0%, transparent 70%)', borderRadius: '50%', filter: 'blur(80px)' }} />
 
-      {/* Global Background 3D */}
-      <div className="canvas-container">
-        <Canvas camera={{ position: [0, 0, 10], fov: 45 }} dpr={[1, 2]}>
-          <Scene3D />
-          <Preload all />
-        </Canvas>
+        {/* Parallax Dancers */}
+        <motion.img 
+          src="/assets/garba_dancers.png" 
+          alt="" 
+          style={{ position: 'absolute', bottom: '-10%', left: '-5%', height: '80vh', objectFit: 'contain', opacity: 0.15, y: bg1Y }} 
+        />
+        <motion.img 
+          src="/assets/garba_dancers_2.png" 
+          alt="" 
+          style={{ position: 'absolute', top: '10%', right: '-5%', height: '70vh', objectFit: 'contain', opacity: 0.15, y: bg2Y }} 
+        />
       </div>
 
       {/* Normal scrolling content layer */}
-      <main className="content-layer">
+      <main className="content-layer" style={{ position: 'relative', zIndex: 10 }}>
         <Hero />
         <EventInfo />
         <Passes />

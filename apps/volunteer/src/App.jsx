@@ -1,53 +1,55 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import VolunteerLogin from './pages/Login';
+import VolunteerLayout from './components/VolunteerLayout';
+import NetworkIndicator from './components/NetworkIndicator';
 
-const Dashboard = () => {
-  const { user, volunteerData, permissions, logout } = useAuth();
-  return (
-    <div style={{ color: 'var(--color-ivory)', padding: '2rem', fontFamily: 'var(--font-body)' }}>
-      <h1>Volunteer Scanner Dashboard</h1>
-      <p>Welcome, {volunteerData?.name || user?.email}</p>
-      <p>Permissions: <strong style={{ color: 'var(--color-saffron)' }}>{permissions.join(', ')}</strong></p>
-      <button onClick={logout} style={{ padding: '0.5rem 1rem', background: 'var(--color-maroon)', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Logout</button>
-    </div>
-  );
-};
+const Scanner = React.lazy(() => import('./pages/Scanner'));
 
 const ProtectedRoute = ({ children }) => {
   const { status } = useAuth();
-  if (status === 'INITIALIZING') return <div style={{ color: 'white', padding: '2rem' }}>Loading Auth...</div>;
-  if (status === 'UNAUTHENTICATED' || status === 'DISABLED' || status === 'ERROR') return <Navigate to="/login" />;
+  if (status === 'INITIALIZING') {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#050505' }}>
+        <div style={{ color: 'var(--color-gold)', fontFamily: 'var(--font-heading)', fontSize: '1.2rem', letterSpacing: '2px', animation: 'pulse 1.5s infinite' }}>
+          VERIFYING ACCESS...
+        </div>
+      </div>
+    );
+  }
+  if (status === 'UNAUTHENTICATED' || status === 'DISABLED' || status === 'ERROR') {
+    return <Navigate to="/login" />;
+  }
   return children;
 };
 
-import VolunteerLayout from './components/VolunteerLayout';
-import Scanner from './pages/Scanner';
-
-const PlaceholderPage = ({ title }) => (
-  <div style={{ textAlign: 'center', padding: '2rem' }}>
-    <h2 style={{ color: 'var(--color-gold)', marginBottom: '1rem' }}>{title}</h2>
-    <p style={{ color: '#aaa' }}>This feature is being connected to the backend.</p>
+const PageLoader = () => (
+  <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111' }}>
+    <div style={{ color: 'var(--text-secondary)' }}>Loading Scanner...</div>
   </div>
 );
 
 function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/login" element={<VolunteerLogin />} />
+    <>
+      <NetworkIndicator />
+      <Routes>
+        <Route path="/login" element={<VolunteerLogin />} />
       <Route path="/" element={
         <ProtectedRoute>
           <VolunteerLayout />
         </ProtectedRoute>
       }>
         <Route index element={<Navigate to="/scanner" replace />} />
-        <Route path="scanner" element={<Scanner />} />
-        <Route path="lookup" element={<PlaceholderPage title="Manual Lookup" />} />
-        <Route path="history" element={<PlaceholderPage title="Scan History" />} />
-        <Route path="profile" element={<PlaceholderPage title="Volunteer Profile" />} />
+        <Route path="scanner" element={
+          <Suspense fallback={<PageLoader />}>
+            <Scanner />
+          </Suspense>
+        } />
       </Route>
     </Routes>
+    </>
   );
 }
 

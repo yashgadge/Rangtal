@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, limit, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import PageHeader from '../components/PageHeader';
@@ -7,11 +7,15 @@ import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
 import { Download } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
+import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 
 export default function Registrations() {
+  const toast = useToast();
   const [registrations, setRegistrations] = useState([]);
   const [filteredRegs, setFilteredRegs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,6 +24,7 @@ export default function Registrations() {
   const [participants, setParticipants] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState(null);
   const [correctionReason, setCorrectionReason] = useState('');
 
   useEffect(() => {
@@ -32,13 +37,17 @@ export default function Registrations() {
 
   async function fetchRegistrations() {
     setLoading(true);
+    setError(null);
     try {
-      const q = query(collection(db, 'registrations'), orderBy('createdAt', 'desc'));
+      // Use limit to avoid massive collection reads
+      const q = query(collection(db, 'registrations'), orderBy('createdAt', 'desc'), limit(100));
       const snap = await getDocs(q);
       const regs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setRegistrations(regs);
     } catch (err) {
       console.error("Error fetching registrations:", err);
+      setError(err);
+      toast.error('Failed to load registrations', normalizeError(err));
     } finally {
       setLoading(false);
     }
@@ -63,16 +72,16 @@ export default function Registrations() {
   async function handleRowClick(reg) {
     setSelectedReg(reg);
     setLoadingDetails(true);
+    setDetailsError(null);
     setParticipants([]);
     setDocuments([]);
     setCorrectionReason('');
     
     try {
-      const participantsSnap = await getDocs(collection(db, 'participants'));
-      const parts = participantsSnap.docs
-        .map(d => ({id: d.id, ...d.data()}))
-        .filter(p => p.registrationId === reg.id);
-      
+      // Fix N+1 query: Only fetch participants for this specific registration
+      const pQuery = query(collection(db, 'participants'), where('registrationId', '==', reg.id));
+      const participantsSnap = await getDocs(pQuery);
+      const parts = participantsSnap.docs.map(d => ({id: d.id, ...d.data()}));
       setParticipants(parts);
       
       const docs = [];
@@ -91,6 +100,8 @@ export default function Registrations() {
       
     } catch (err) {
       console.error("Error fetching details", err);
+      setDetailsError(err.message);
+      toast.error('Failed to load details', normalizeError(err));
     } finally {
       setLoadingDetails(false);
     }
@@ -98,16 +109,17 @@ export default function Registrations() {
 
   async function handleApprove() {
     if (!selectedReg) return;
+    const toastId = toast.loading('Approving registration...');
     try {
       setLoadingDetails(true);
       const approveFn = httpsCallable(functions, 'approveVerification');
       await approveFn({ registrationId: selectedReg.id });
-      alert("Approved successfully.");
+      toast.update(toastId, 'success', 'Approved successfully.');
       setSelectedReg(null);
       fetchRegistrations();
     } catch (err) {
       console.error(err);
-      alert("Error approving: " + err.message);
+      toast.update(toastId, 'error', 'Error approving', normalizeError(err));
     } finally {
       setLoadingDetails(false);
     }
@@ -115,17 +127,21 @@ export default function Registrations() {
 
   async function handleRequestCorrection() {
     if (!selectedReg) return;
-    if (!correctionReason) return alert("Please provide a reason.");
+    if (!correctionReason) {
+      toast.warning('Reason Required', 'Please provide a correction reason.');
+      return;
+    }
+    const toastId = toast.loading('Requesting correction...');
     try {
       setLoadingDetails(true);
       const correctionFn = httpsCallable(functions, 'requestVerificationCorrection');
       await correctionFn({ registrationId: selectedReg.id, reason: correctionReason });
-      alert("Correction requested.");
+      toast.update(toastId, 'success', 'Correction requested.');
       setSelectedReg(null);
       fetchRegistrations();
     } catch (err) {
       console.error(err);
-      alert("Error requesting correction: " + err.message);
+      toast.update(toastId, 'error', 'Error requesting correction', normalizeError(err));
     } finally {
       setLoadingDetails(false);
     }
@@ -153,35 +169,21 @@ export default function Registrations() {
         description="Manage participant registrations and verification workflow." 
         actions={
           <button className="btn btn-secondary" onClick={fetchRegistrations}>
-            <Download size={16} /> Export
+            <Download size={16} /> Export Recent
           </button>
         }
       />
-
-      {/* Stats Strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-        {[
-          { label: 'Total', val: registrations.length },
-          { label: 'Pending', val: registrations.filter(r => r.status === 'SUBMITTED' || r.verificationStatus === 'VERIFICATION_PENDING').length },
-          { label: 'Verified', val: registrations.filter(r => r.status === 'VERIFIED' || r.verificationStatus === 'VERIFIED').length },
-          { label: 'Correction', val: registrations.filter(r => r.status === 'REQUIRES_CORRECTION' || r.verificationStatus === 'REQUIRES_CORRECTION').length }
-        ].map(stat => (
-          <div key={stat.label} className="surface" style={{ padding: '1rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '1.5rem', fontFamily: 'var(--font-heading)', color: 'var(--color-gold)' }}>{stat.val}</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>{stat.label}</div>
-          </div>
-        ))}
-      </div>
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <DataTable 
           columns={columns} 
           data={filteredRegs} 
           loading={loading}
+          error={error}
           onRowClick={handleRowClick}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
-          searchPlaceholder="Search registrations..."
+          searchPlaceholder="Search recent registrations..."
           actions={
             <select 
               value={statusFilter} 
@@ -206,9 +208,11 @@ export default function Registrations() {
         onClose={() => setSelectedReg(null)}
         title="Registration Details"
       >
-        {loadingDetails || !selectedReg ? (
+        {loadingDetails ? (
           <div style={{ textAlign: 'center', padding: '2rem' }}>Loading details...</div>
-        ) : (
+        ) : detailsError ? (
+          <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-error)' }}>{detailsError}</div>
+        ) : !selectedReg ? null : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
             
             {/* Overview */}
@@ -231,6 +235,14 @@ export default function Registrations() {
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Status</div>
                   <div><span className={`badge ${getBadgeColor(selectedReg.status)}`}>{selectedReg.status}</span></div>
                 </div>
+                <div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Participants</div>
+                  <div>{selectedReg.participantCount || 1} Total</div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Stats</div>
+                  <div>{selectedReg.verifiedCount || 0} Verified, {selectedReg.checkedInCount || 0} Checked-In</div>
+                </div>
               </div>
             </div>
 
@@ -241,7 +253,7 @@ export default function Registrations() {
                 {participants.length > 0 ? participants.map((p, i) => (
                   <div key={p.id} className="surface-flat" style={{ padding: '1rem', borderLeft: '3px solid var(--color-gold)' }}>
                     <div style={{ fontWeight: 600 }}>{p.fullName}</div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{p.gender} • {p.email || 'No email'}</div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{p.gender} • Verification: {p.verificationStatus}</div>
                   </div>
                 )) : (
                   <div style={{ color: 'var(--text-muted)' }}>No participants linked.</div>
@@ -267,30 +279,6 @@ export default function Registrations() {
                 <p style={{ color: 'var(--text-muted)' }}>No documents uploaded.</p>
               )}
             </div>
-
-            {/* Verification Actions */}
-            {(selectedReg.status === 'VERIFICATION_PENDING' || selectedReg.status === 'SUBMITTED') && (
-              <div className="surface" style={{ padding: '1.25rem', marginTop: '1rem' }}>
-                <h4 style={{ color: 'var(--color-gold)', marginBottom: '1rem' }}>Verification Decision</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Reason for correction (required if requesting)" 
-                    value={correctionReason}
-                    onChange={e => setCorrectionReason(e.target.value)}
-                    className="form-input"
-                  />
-                  <div style={{ display: 'flex', gap: '1rem' }}>
-                    <button className="btn btn-secondary" style={{ flex: 1, color: 'var(--color-warning)', borderColor: 'var(--color-warning)' }} onClick={handleRequestCorrection}>
-                      Request Correction
-                    </button>
-                    <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleApprove}>
-                      Approve
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
 
           </div>
         )}

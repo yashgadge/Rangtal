@@ -6,44 +6,50 @@ const { createAuditLog } = require("../shared/audit");
 const db = getFirestore();
 
 /**
- * Admin action: Approve verification.
- * State transition: VERIFICATION_PENDING -> VERIFIED
+ * Admin action: Approve verification for a specific participant.
  */
 exports.approveVerification = onCall(async (request) => {
   const uid = requireAdmin(request);
-  const { registrationId } = request.data;
+  const { participantId } = request.data;
   
-  if (!registrationId) throw new HttpsError("invalid-argument", "Missing registrationId");
+  if (!participantId) throw new HttpsError("invalid-argument", "Missing participantId");
 
   try {
     await db.runTransaction(async (t) => {
-      const regRef = db.collection("registrations").doc(registrationId);
-      const regSnap = await t.get(regRef);
-      if (!regSnap.exists) throw new HttpsError("not-found", "Registration not found");
+      const partRef = db.collection("participants").doc(participantId);
+      const partSnap = await t.get(partRef);
+      if (!partSnap.exists) throw new HttpsError("not-found", "Participant not found");
       
-      const regData = regSnap.data();
-      if (regData.status !== "VERIFICATION_PENDING" && regData.status !== "SUBMITTED") {
-        throw new HttpsError("failed-precondition", `Cannot approve registration in status: ${regData.status}`);
-      }
-      
-      t.update(regRef, {
-        status: "VERIFIED",
+      const partData = partSnap.data();
+      const registrationId = partData.registrationId;
+
+      t.update(partRef, {
+        verificationStatus: "APPROVED",
         updatedAt: FieldValue.serverTimestamp()
       });
 
-      // Optionally approve all participants as well
-      const partsQuery = db.collection("participants").where("registrationId", "==", registrationId);
-      const partsSnap = await t.get(partsQuery);
-      partsSnap.forEach(doc => {
-        t.update(doc.ref, { 
-          verificationStatus: "APPROVED",
+      // Update registration verified count
+      const regRef = db.collection("registrations").doc(registrationId);
+      const regSnap = await t.get(regRef);
+      if (regSnap.exists) {
+        const regData = regSnap.data();
+        const newVerifiedCount = (regData.verifiedCount || 0) + 1;
+        const updates = {
+          verifiedCount: newVerifiedCount,
           updatedAt: FieldValue.serverTimestamp()
-        });
-      });
+        };
+        
+        // If all participants are verified, set status to VERIFIED
+        if (newVerifiedCount >= regData.participantCount) {
+          updates.status = "VERIFIED";
+        }
+        
+        t.update(regRef, updates);
+      }
     });
 
     await createAuditLog({
-      actorId: uid, actorRole: "ADMIN", action: "VERIFICATION_APPROVED", targetType: "REGISTRATION", targetId: registrationId
+      actorId: uid, actorRole: "ADMIN", action: "VERIFICATION_APPROVED", targetType: "PARTICIPANT", targetId: participantId
     });
 
     return { success: true };
@@ -54,35 +60,38 @@ exports.approveVerification = onCall(async (request) => {
 });
 
 /**
- * Admin action: Require correction.
- * State transition: VERIFICATION_PENDING -> REQUIRES_CORRECTION
+ * Admin action: Require correction for a specific participant.
  */
 exports.requestVerificationCorrection = onCall(async (request) => {
   const uid = requireAdmin(request);
-  const { registrationId, reason } = request.data;
+  const { participantId, reason } = request.data;
   
-  if (!registrationId || !reason) throw new HttpsError("invalid-argument", "Missing registrationId or reason");
+  if (!participantId || !reason) throw new HttpsError("invalid-argument", "Missing participantId or reason");
 
   try {
     await db.runTransaction(async (t) => {
-      const regRef = db.collection("registrations").doc(registrationId);
-      const regSnap = await t.get(regRef);
-      if (!regSnap.exists) throw new HttpsError("not-found", "Registration not found");
+      const partRef = db.collection("participants").doc(participantId);
+      const partSnap = await t.get(partRef);
+      if (!partSnap.exists) throw new HttpsError("not-found", "Participant not found");
       
-      const regData = regSnap.data();
-      if (regData.status !== "VERIFICATION_PENDING" && regData.status !== "SUBMITTED") {
-        throw new HttpsError("failed-precondition", "Registration not pending verification");
-      }
-      
-      t.update(regRef, {
-        status: "REQUIRES_CORRECTION",
+      const partData = partSnap.data();
+      const registrationId = partData.registrationId;
+
+      t.update(partRef, {
+        verificationStatus: "REQUIRES_CORRECTION",
         correctionReason: reason,
+        updatedAt: FieldValue.serverTimestamp()
+      });
+
+      const regRef = db.collection("registrations").doc(registrationId);
+      t.update(regRef, {
+        status: "REQUIRES_CORRECTION", // Mark the whole registration as needing attention
         updatedAt: FieldValue.serverTimestamp()
       });
     });
 
     await createAuditLog({
-      actorId: uid, actorRole: "ADMIN", action: "VERIFICATION_REQUIRES_CORRECTION", targetType: "REGISTRATION", targetId: registrationId, metadata: { reason }
+      actorId: uid, actorRole: "ADMIN", action: "VERIFICATION_REQUIRES_CORRECTION", targetType: "PARTICIPANT", targetId: participantId, metadata: { reason }
     });
 
     return { success: true };
