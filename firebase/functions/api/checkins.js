@@ -8,7 +8,7 @@ let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = get
 /**
  * Verify a pass by secureCode (scanned from QR) and return details.
  */
-exports.verifyPass = onCall(async (request) => {
+exports.verifyPass = onCall({ invoker: "public" }, async (request) => {
   requirePermission(request, "SCAN_PASS");
   const { passId: secureCode } = request.data;
   
@@ -62,7 +62,7 @@ exports.verifyPass = onCall(async (request) => {
 /**
  * Validates a pass and checks in the participant transactionally.
  */
-exports.checkInParticipant = onCall(async (request) => {
+exports.checkInParticipant = onCall({ invoker: "public" }, async (request) => {
   const uid = requirePermission(request, "SCAN_PASS");
   const { secureCode } = request.data;
   
@@ -163,7 +163,7 @@ exports.checkInParticipant = onCall(async (request) => {
 /**
  * Checks in multiple members of a group via the Group Pass.
  */
-exports.checkInGroupMembers = onCall(async (request) => {
+exports.checkInGroupMembers = onCall({ invoker: "public" }, async (request) => {
   const uid = requirePermission(request, "SCAN_PASS");
   const { secureCode, selectedParticipantIds } = request.data;
   
@@ -270,6 +270,7 @@ exports.checkInGroupMembers = onCall(async (request) => {
     throw new HttpsError("internal", "Failed to check in group participants");
   }
 });
+
 
 
 

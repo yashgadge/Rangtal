@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
-import { auth, db } from '../firebase';
+import { auth, db, functions } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { LogOut, Ticket, Clock, CheckCircle2, AlertCircle, FileText, User } from 'lucide-react';
@@ -54,6 +55,48 @@ export default function Account() {
 
     return regs;
   }, { enabled: !!user });
+
+  const handlePayment = async (reg) => {
+    try {
+      const createOrder = httpsCallable(functions, 'createPaymentOrder');
+      const { data } = await createOrder({ registrationId: reg.id });
+      
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_placeholder",
+        amount: data.amount * 100,
+        currency: "INR",
+        name: "Rangtal Garba",
+        description: `${reg.type === 'COUPLE' ? 'Couple' : 'Single'} Pass Payment`,
+        order_id: data.orderId,
+        handler: async function (response) {
+          try {
+            const verifyPayment = httpsCallable(functions, 'verifyPayment');
+            await verifyPayment({
+              paymentId: data.paymentId,
+              gatewayPaymentId: response.razorpay_payment_id,
+              gatewaySignature: response.razorpay_signature
+            });
+            window.location.reload();
+          } catch (err) {
+            console.error("Verification failed", err);
+            alert("Payment verification failed. Please contact support.");
+          }
+        },
+        prefill: {
+          email: user.email
+        },
+        theme: {
+          color: "#D4AF37"
+        }
+      };
+      
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      console.error("Order creation failed", err);
+      alert("Could not initiate payment: " + err.message);
+    }
+  };
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -225,8 +268,8 @@ export default function Account() {
                           <div style={{ textAlign: 'center', padding: '2rem', background: 'rgba(255,255,255,0.03)', borderRadius: '16px' }}>
                             <h3 style={{ fontSize: '1.5rem', color: 'white', marginBottom: '0.5rem' }}>Complete Payment</h3>
                             <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>Your documents are verified. Complete the payment to receive your pass.</p>
-                            <button className="btn-primary" disabled style={{ margin: '0 auto', opacity: 0.5 }}>
-                              Pay ₹{reg.amount} (Integration Pending)
+                            <button className="btn-primary" onClick={() => handlePayment(reg)} style={{ margin: '0 auto' }}>
+                              Pay ₹{reg.amount}
                             </button>
                           </div>
                         )

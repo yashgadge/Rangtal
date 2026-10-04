@@ -8,7 +8,7 @@ let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = get
 /**
  * Admin action: Approve verification for a specific participant.
  */
-exports.approveVerification = onCall(async (request) => {
+exports.approveVerification = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAdmin(request);
   const { participantId } = request.data;
   
@@ -62,7 +62,7 @@ exports.approveVerification = onCall(async (request) => {
 /**
  * Admin action: Require correction for a specific participant.
  */
-exports.requestVerificationCorrection = onCall(async (request) => {
+exports.requestVerificationCorrection = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAdmin(request);
   const { participantId, reason } = request.data;
   
@@ -105,7 +105,7 @@ exports.requestVerificationCorrection = onCall(async (request) => {
  * Participant action: Resubmit verification.
  * State transition: REQUIRES_CORRECTION -> VERIFICATION_PENDING
  */
-exports.submitVerification = onCall(async (request) => {
+exports.submitVerification = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAuthenticatedUser(request);
   const { registrationId, documents } = request.data;
   
@@ -153,7 +153,7 @@ exports.submitVerification = onCall(async (request) => {
 /**
  * Admin action: Get short-lived signed URL for a verification document.
  */
-exports.getVerificationDocumentUrl = onCall(async (request) => {
+exports.getVerificationDocumentUrl = onCall({ invoker: "public" }, async (request) => {
   requireAdmin(request);
   const { path } = request.data;
   
@@ -183,4 +183,5 @@ exports.getVerificationDocumentUrl = onCall(async (request) => {
     throw new HttpsError("internal", "Failed to generate signed URL");
   }
 });
+
 

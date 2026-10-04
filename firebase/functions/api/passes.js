@@ -10,7 +10,7 @@ let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = get
  * Generate a pass for a registration.
  * Can be called by the participant who owns it, or an Admin.
  */
-exports.generatePass = onCall(async (request) => {
+exports.generatePass = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAuthenticatedUser(request);
   const { registrationId } = request.data;
   const isAdmin = request.auth.token.admin || request.auth.token.super_admin;
@@ -120,4 +120,5 @@ exports.generatePass = onCall(async (request) => {
     throw new HttpsError("internal", "Failed to generate pass");
   }
 });
+
 

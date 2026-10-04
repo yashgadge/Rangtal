@@ -10,7 +10,7 @@ let _auth; const auth = new Proxy({}, { get: (target, prop) => { if (!_auth) _au
 /**
  * Creates a volunteer account.
  */
-exports.createVolunteer = onCall(async (request) => {
+exports.createVolunteer = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAdmin(request);
   const { admin, super_admin, email: userEmail } = request.auth.token;
   const isMaster = userEmail === 'yashgadge11155@gmail.com';
@@ -61,7 +61,7 @@ exports.createVolunteer = onCall(async (request) => {
 /**
  * Disables a volunteer account.
  */
-exports.disableVolunteer = onCall(async (request) => {
+exports.disableVolunteer = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAdmin(request);
   const { admin, super_admin, email: userEmail } = request.auth.token;
   const isMaster = userEmail === 'yashgadge11155@gmail.com';
@@ -92,5 +92,6 @@ exports.disableVolunteer = onCall(async (request) => {
     throw new HttpsError("internal", error.message);
   }
 });
+
 
 

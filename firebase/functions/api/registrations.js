@@ -5,7 +5,7 @@ const { createAuditLog } = require("../shared/audit");
 
 let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = getFirestore(); const val = _db[prop]; return typeof val === 'function' ? val.bind(_db) : val; }});
 
-exports.createRegistration = onCall(async (request) => {
+exports.createRegistration = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAuthenticatedUser(request);
   const { packageId, collegeId, type, formFields, participants } = request.data;
 
@@ -102,7 +102,7 @@ exports.createRegistration = onCall(async (request) => {
   }
 });
 
-exports.submitRegistration = onCall(async (request) => {
+exports.submitRegistration = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAuthenticatedUser(request);
   const { registrationId, documents } = request.data;
   
@@ -137,4 +137,5 @@ exports.submitRegistration = onCall(async (request) => {
   
   return { success: true };
 });
+
 

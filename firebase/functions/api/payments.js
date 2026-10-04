@@ -9,7 +9,7 @@ let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = get
 // const Razorpay = require('razorpay');
 // const rzp = new Razorpay({ key_id: process.env.RZP_KEY, key_secret: process.env.RZP_SECRET });
 
-exports.createPaymentOrder = onCall(async (request) => {
+exports.createPaymentOrder = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAuthenticatedUser(request);
   const { registrationId } = request.data;
   
@@ -43,11 +43,22 @@ exports.createPaymentOrder = onCall(async (request) => {
         throw new HttpsError("resource-exhausted", "Package is sold out");
       }
 
-      // 1. Create order in Gateway (Razorpay integration DEFERRED)
-      if (process.env.FUNCTIONS_EMULATOR !== "true") {
-        throw new HttpsError("unimplemented", "Razorpay integration is DEFERRED for production.");
+      // 1. Create order in Gateway
+      let orderId;
+      if (process.env.RZP_KEY && process.env.RZP_SECRET) {
+        const Razorpay = require('razorpay');
+        const rzp = new Razorpay({ key_id: process.env.RZP_KEY, key_secret: process.env.RZP_SECRET });
+        const rzpOrder = await rzp.orders.create({
+          amount: pkg.price * 100, // amount in paise
+          currency: "INR",
+          receipt: `receipt_${registrationId}`,
+          notes: { registrationId }
+        });
+        orderId = rzpOrder.id;
+      } else {
+        // Fallback for emulator if keys are missing
+        orderId = `EMULATOR_PAYMENT_ORDER_${Date.now()}`;
       }
-      const orderId = `EMULATOR_PAYMENT_ORDER_${Date.now()}`;
       
       // 2. Create local Payment record
       const paymentRef = db.collection("payments").doc();
@@ -90,7 +101,7 @@ exports.createPaymentOrder = onCall(async (request) => {
   }
 });
 
-exports.verifyPayment = onCall(async (request) => {
+exports.verifyPayment = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAuthenticatedUser(request);
   const { paymentId, gatewayPaymentId, gatewaySignature } = request.data;
   
@@ -117,16 +128,21 @@ exports.verifyPayment = onCall(async (request) => {
         return { alreadyProcessed: true }; // Idempotency
       }
 
-      // Cryptographic verification would happen here.
-      // Razorpay integration is DEFERRED.
-      if (process.env.FUNCTIONS_EMULATOR !== "true") {
-        throw new HttpsError("unimplemented", "Razorpay verification is DEFERRED for production.");
+      // Cryptographic verification
+      let isValid = false;
+      if (process.env.RZP_SECRET) {
+        const crypto = require('crypto');
+        const expectedSignature = crypto
+          .createHmac('sha256', process.env.RZP_SECRET)
+          .update(paymentData.gatewayOrderId + "|" + gatewayPaymentId)
+          .digest('hex');
+        isValid = expectedSignature === gatewaySignature;
+      } else {
+        // Emulator fallback
+        if (gatewayPaymentId.startsWith("EMULATOR_PAYMENT_") || gatewayPaymentId.startsWith("TEST_PAYMENT_")) {
+          isValid = true;
+        }
       }
-      
-      if (!gatewayPaymentId.startsWith("EMULATOR_PAYMENT_") && !gatewayPaymentId.startsWith("TEST_PAYMENT_")) {
-        throw new HttpsError("invalid-argument", "Only explicit test fixtures are allowed. Real payments DEFERRED.");
-      }
-      const isValid = true; // Test fixture validated
       
       if (!isValid) {
         throw new HttpsError("invalid-argument", "Payment signature invalid.");
@@ -186,4 +202,5 @@ exports.verifyPayment = onCall(async (request) => {
     throw new HttpsError("internal", "Payment verification failed.");
   }
 });
+
 

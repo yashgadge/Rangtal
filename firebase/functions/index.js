@@ -41,7 +41,7 @@ exports.forceResetPassword = forceReset.forceResetPassword;
 const { onCall } = require("firebase-functions/v2/https");
 const { getFirestore } = require("firebase-admin/firestore");
 
-exports.seedData = onCall(async (request) => {
+exports.seedData = onCall({ invoker: "public" }, async (request) => {
   require("./shared/auth").requireAdmin(request);
   const db = getFirestore();
   await db.collection("packages").doc("pkg-season-pass").set({
@@ -64,3 +64,4 @@ exports.seedData = onCall(async (request) => {
   });
   return { success: true };
 });
+
