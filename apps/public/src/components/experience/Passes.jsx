@@ -84,11 +84,12 @@ export default function Passes() {
             const isPopular = pkg.type === 'COUPLE' || pkg.name.toLowerCase().includes('couple');
             return (
               <motion.div key={pkg.id} variants={itemVariants} className="pass-card" style={{ 
-                background: 'var(--surface)', 
-                border: isPopular ? '2px solid var(--color-gold)' : '1px solid rgba(255, 255, 255, 0.1)', 
+                background: 'linear-gradient(145deg, rgba(60,15,30,0.4), rgba(26,5,11,0.7))', 
+                backdropFilter: 'blur(20px)',
+                border: isPopular ? '2px solid var(--color-gold)' : '1px solid rgba(232,213,181,0.15)', 
                 padding: '2rem', 
                 borderRadius: '24px', 
-                boxShadow: isPopular ? '0 20px 50px rgba(0,0,0,0.8)' : '0 10px 30px rgba(0,0,0,0.5)', 
+                boxShadow: isPopular ? '0 20px 50px rgba(0,0,0,0.8)' : '0 20px 40px rgba(0,0,0,0.5)', 
                 position: 'relative', 
                 overflow: 'hidden',
                 transform: isPopular ? 'scale(1.05)' : 'scale(1)',

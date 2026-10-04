@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
+import { Agentation } from 'agentation'
 import { ToastProvider } from '../../../shared/ui/Toast/ToastProvider.jsx'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -9,5 +10,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <ToastProvider>
       <App />
     </ToastProvider>
+    <Agentation />
   </React.StrictMode>,
 )

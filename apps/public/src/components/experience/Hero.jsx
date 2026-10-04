@@ -1,14 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import './Scenes.css';
+import { motion } from 'framer-motion';
+import GlassSurface from '../ui/GlassSurface';
+import './Hero.css';
 
 export default function Hero() {
   const navigate = useNavigate();
+  const heroRef = useRef(null);
+  const ctaRef = useRef(null);
+  
   const [settings, setSettings] = useState({
-    EVENT: { eventName: 'Rangtal Garba Night', eventDate: '11-19 OCT', location: 'JSPM GROUND', organizer: 'Rhythm Rebels' },
+    EVENT: { eventName: 'Rangtal Garba Night', eventDate: '17 NOV 2026', location: 'JSPM UNIVERSITY GROUND', organizer: 'Rhythm Rebels' },
     REGISTRATION: { requireCollegeId: true }
   });
 
@@ -26,102 +30,261 @@ export default function Hero() {
     loadSettings();
   }, []);
 
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { staggerChildren: 0.2, delayChildren: 0.3 } }
-  };
+  // High-performance 3D Camera Loop
+  useEffect(() => {
+    const mouse = { x: 0, y: 0, targetX: 0, targetY: 0 };
+    const scroll = { y: 0, targetY: 0 };
+    let animationFrameId;
 
-  const itemVariants = {
-    hidden: { opacity: 0, y: 30 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] } }
-  };
+    const handleMouseMove = (e) => {
+      const { innerWidth, innerHeight } = window;
+      mouse.targetX = (e.clientX / innerWidth - 0.5) * 2; // -1 to 1
+      mouse.targetY = (e.clientY / innerHeight - 0.5) * 2; // -1 to 1
+    };
+    
+    const handleScroll = () => {
+      scroll.targetY = window.scrollY;
+    };
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    const render = () => {
+      // Smooth interpolation (lerp) for buttery camera movement
+      mouse.x += (mouse.targetX - mouse.x) * 0.05;
+      mouse.y += (mouse.targetY - mouse.y) * 0.05;
+      scroll.y += (scroll.targetY - scroll.y) * 0.08;
+
+      if (heroRef.current) {
+        heroRef.current.style.setProperty('--cam-x', mouse.x.toFixed(4));
+        heroRef.current.style.setProperty('--cam-y', mouse.y.toFixed(4));
+        heroRef.current.style.setProperty('--scroll-y', scroll.y.toFixed(2));
+      }
+      
+      if (ctaRef.current) {
+        // Smooth, gentle physics for the fixed button
+        const velocity = scroll.targetY - scroll.y;
+        const yOffset = Math.max(-10, Math.min(10, velocity * 0.08));
+        const scale = 1 - Math.abs(velocity * 0.0003);
+        ctaRef.current.style.transform = `translate(-50%, ${yOffset}px) scale(${Math.max(0.97, scale)})`;
+      }
+      
+      animationFrameId = requestAnimationFrame(render);
+    };
+    render();
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('scroll', handleScroll);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, []);
 
   return (
-    <section className="scene-container hero-scene" id="experience" style={{ position: 'relative', zIndex: 10 }}>
-      
-      {/* Decorative Border Frame */}
-      <div className="hero-frame" style={{ pointerEvents: 'none', border: '1px solid rgba(255, 215, 0, 0.2)' }}>
-        <div className="hero-frame-inner" style={{ border: '1px solid rgba(255, 215, 0, 0.1)' }}></div>
+    <>
+      <section className="hero-cinematic-container" ref={heroRef} id="experience">
+        <div className="scene-volume">
+        
+        {/* =========================================================
+            Z = -600: DEEP BACKGROUND (Sky & Distant Architecture)
+        ========================================================= */}
+        <div className="scene-layer layer-deep-bg">
+          <div className="bg-plate"></div>
+          <div className="bg-atmosphere"></div>
+        </div>
+
+        {/* =========================================================
+            Z = -300: ARCHITECTURE & FESTIVAL LIGHTS
+        ========================================================= */}
+        <div className="scene-layer layer-architecture">
+          <div className="central-mandala"></div>
+        </div>
+
+        {/* =========================================================
+            Z = -150: FAR CROWD (Silhouettes and blurry dancers)
+        ========================================================= */}
+        <div className="scene-layer layer-crowd-far">
+          <div className="crowd-member c-far-1"></div>
+          <div className="crowd-member c-far-2"></div>
+          <div className="crowd-member c-far-3"></div>
+          <div className="crowd-member c-far-4"></div>
+          <div className="crowd-member c-far-5"></div>
+          <div className="crowd-member c-far-6"></div>
+          <div className="crowd-member c-far-7"></div>
+          <div className="crowd-member c-far-8"></div>
+        </div>
+
+        {/* =========================================================
+            Z = -100: HANGING LANTERNS / FESTIVAL DECOR
+        ========================================================= */}
+        <div className="scene-layer layer-lanterns">
+           <div className="lantern l1"></div>
+           <div className="lantern l2"></div>
+           <div className="lantern l3"></div>
+           <div className="lantern l4"></div>
+           <div className="lantern l5"></div>
+           <div className="lantern l6"></div>
+        </div>
+
+        {/* =========================================================
+            Z = -50: NEAR CROWD
+        ========================================================= */}
+        <div className="scene-layer layer-crowd-near">
+          <div className="crowd-member c-near-1"></div>
+          <div className="crowd-member c-near-2"></div>
+          <div className="crowd-member c-near-3"></div>
+          <div className="crowd-member c-near-4"></div>
+        </div>
+
+        {/* =========================================================
+            Z = 0: PHYSICAL FLOOR 
+        ========================================================= */}
+        <div className="scene-layer layer-floor">
+          <div className="stage-floor"></div>
+        </div>
+
+        {/* =========================================================
+            Z = 50: HERO DANCERS
+        ========================================================= */}
+        <div className="scene-layer layer-hero-dancers">
+          <motion.div 
+            className="hero-dancer hero-dancer-left"
+            animate={{ scale: [1, 1.03, 1], rotate: [0, 1, 0] }}
+            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+          ></motion.div>
+          <motion.div 
+            className="hero-dancer hero-dancer-right"
+            animate={{ scale: [1, 1.02, 1], rotate: [0, -1, 0] }}
+            transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+          ></motion.div>
+        </div>
+
+        {/* =========================================================
+            Z = 120: CENTRAL TYPOGRAPHY & UI
+        ========================================================= */}
+        <div className="scene-layer layer-ui">
+          <div className="hero-content-wrapper">
+            
+            <motion.div 
+              className="hero-top-info"
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, delay: 0.5 }}
+            >
+              {settings.REGISTRATION?.requireCollegeId && (
+                <motion.div 
+                  className="luxury-badge"
+                  animate={{ boxShadow: ['0 0 10px rgba(255,215,0,0)', '0 0 20px rgba(255,215,0,0.4)', '0 0 10px rgba(255,215,0,0)'] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                >
+                  <span className="badge-icon">✦</span>
+                  ONLY FOR JSPM STUDENTS
+                  <span className="badge-icon">✦</span>
+                </motion.div>
+              )}
+              <div className="hero-kicker">THE BIGGEST GARBA MAHOTSAV</div>
+            </motion.div>
+
+            <motion.div 
+              className="hero-title-container"
+              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 1.2, ease: "easeOut" }}
+            >
+              <motion.h1 
+                className="hero-title-main"
+                animate={{ y: [0, -15, 0] }}
+                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+              >
+                {settings.EVENT?.eventName?.split(' ')[0] || 'Rangtal'}
+              </motion.h1>
+              <motion.div 
+                className="hero-title-secondary"
+                animate={{ y: [0, -10, 0], rotate: [-3, -1, -3] }}
+                transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
+              >
+                {settings.EVENT?.eventName?.split(' ').slice(1).join(' ') || 'Garba Night'}
+              </motion.div>
+            </motion.div>
+
+            <div className="hero-action-area">
+              <div className="luxury-event-info">
+                <span className="info-val">{settings.EVENT?.eventDate || '17 NOV 2026'}</span>
+                <span className="info-sep">|</span>
+                <span className="info-val">{settings.EVENT?.location || 'JSPM UNIVERSITY GROUND'}</span>
+              </div>
+              <div className="hero-organized-by">
+                <div className="organized-label">ORGANISED BY</div>
+                <div className="organized-val">{settings.EVENT?.organizer || 'Rhythm Rebels'}</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {/* =========================================================
+            Z = 250: EXTREME FOREGROUND
+        ========================================================= */}
+        <div className="scene-layer layer-foreground">
+          {/* Physical foreground elements (blurred) */}
+          <div className="fg-object fg-dandiya-left"></div>
+          <div className="fg-object fg-dandiya-right"></div>
+          <div className="fg-object fg-petals-bottom"></div>
+          
+          {/* Subtle lighting/bokeh in foreground */}
+          <div className="fg-object fg-lantern-glow-left"></div>
+          <div className="fg-object fg-lantern-glow-right"></div>
+        </div>
+
+        {/* =========================================================
+            Z = 400: FLOATING EMBERS / PARTICLES (Extreme Depth)
+        ========================================================= */}
+        <div className="scene-layer layer-particles">
+           <div className="particle p1"></div>
+           <div className="particle p2"></div>
+           <div className="particle p3"></div>
+           <div className="particle p4"></div>
+           <div className="particle p5"></div>
+           <div className="particle p6"></div>
+           <div className="particle p7"></div>
+           <div className="particle p8"></div>
+        </div>
+
       </div>
+      
+      {/* Static overlay (vignette / fade out) outside the 3D volume */}
+      <div className="cinematic-fade-bottom"></div>
 
-      <motion.div 
-        className="hero-content" 
-        variants={containerVariants} 
-        initial="hidden" 
-        animate="visible"
-        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%' }}
-      >
-        <motion.div variants={itemVariants} className="hero-top" style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          {settings.REGISTRATION?.requireCollegeId && (
-            <div className="hero-tagline" style={{ letterSpacing: '4px', fontSize: '0.9rem', fontWeight: 800, textTransform: 'uppercase' }}>
-              ONLY FOR JSPM STUDENTS
-            </div>
-          )}
-          <div className="hero-subtitle" style={{ letterSpacing: '4px', marginTop: '1rem', color: 'var(--text-secondary)' }}>THE BIGGEST GARBA MAHOTSAV</div>
-        </motion.div>
+      </section>
 
-        <motion.div variants={itemVariants} className="hero-center" style={{ textAlign: 'center', marginBottom: '3rem', position: 'relative' }}>
-          <h1 className="text-display-massive" style={{ 
-            textShadow: '0 10px 40px rgba(255, 107, 0, 0.6)', 
-            fontSize: 'clamp(5rem, 15vw, 10rem)',
-            lineHeight: 1,
-            margin: 0,
-            background: 'linear-gradient(to bottom, var(--color-gold), var(--color-orange))',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent'
-          }}>
-            {settings.EVENT?.eventName?.split(' ')[0] || 'Rangtal'}
-          </h1>
-          <div className="text-script-massive" style={{ 
-            fontSize: 'clamp(3rem, 8vw, 6rem)', 
-            color: 'var(--color-ivory)', 
-            marginTop: '-1rem',
-            transform: 'rotate(-5deg)'
-          }}>
-            {settings.EVENT?.eventName?.split(' ').slice(1).join(' ') || 'Garba Night'}
-          </div>
-        </motion.div>
-
-        <motion.div variants={itemVariants} className="hero-bottom" style={{ textAlign: 'center' }}>
-          <div style={{ display: 'flex', gap: '2rem', justifyContent: 'center', marginBottom: '3rem' }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--color-gold)', letterSpacing: '2px', textTransform: 'uppercase' }}>Date</div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 600, color: 'white' }}>{settings.EVENT?.eventDate || 'TBA'}</div>
-            </div>
-            <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)' }} />
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--color-gold)', letterSpacing: '2px', textTransform: 'uppercase' }}>Venue</div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 600, color: 'white' }}>{settings.EVENT?.location || 'TBA'}</div>
-            </div>
-          </div>
-          
-          <motion.button 
-            whileHover={{ scale: 1.05, boxShadow: '0 0 30px rgba(255, 153, 51, 0.6)' }}
-            whileTap={{ scale: 0.95 }}
+      {/* Floating Action Button with Physics (Moved OUTSIDE the 3D section to fix position: fixed) */}
+      <div className="floating-cta-container" ref={ctaRef}>
+        <GlassSurface
+          width={320}
+          height={70}
+          borderRadius={50}
+          borderWidth={0.07}
+          backgroundOpacity={0.1}
+          saturation={1}
+          brightness={50}
+          opacity={0.93}
+          blur={11}
+          displace={0.5}
+          distortionScale={-180}
+          redOffset={0}
+          greenOffset={10}
+          blueOffset={20}
+          mixBlendMode="screen"
+        >
+          <button 
+            className="glass-btn-content"
             onClick={() => navigate('/register')}
-            style={{ 
-              fontSize: '1.2rem', 
-              padding: '1.2rem 4rem', 
-              borderRadius: '99px', 
-              background: 'linear-gradient(135deg, var(--color-gold), var(--color-orange))', 
-              color: '#050505', 
-              fontWeight: 800, 
-              fontFamily: 'var(--font-body)', 
-              letterSpacing: '0.1em',
-              border: 'none',
-              cursor: 'pointer',
-              textTransform: 'uppercase'
-            }}
           >
-            Get Your Pass
-          </motion.button>
-          
-          <div className="hero-organized" style={{ marginTop: '3rem' }}>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', letterSpacing: '2px' }}>ORGANISED BY</div>
-            <div className="text-script-medium" style={{ color: 'var(--color-gold)', fontSize: '2rem', marginTop: '0.5rem' }}>{settings.EVENT?.organizer || 'Rhythm Rebels'}</div>
-          </div>
-        </motion.div>
-      </motion.div>
-    </section>
+            <span>GET YOUR PASS</span>
+            <span className="cta-arrow">→</span>
+          </button>
+        </GlassSurface>
+      </div>
+    </>
   );
 }
