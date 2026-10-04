@@ -1,5 +1,5 @@
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const db = getFirestore();
+let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = getFirestore(); const val = _db[prop]; return typeof val === 'function' ? val.bind(_db) : val; }});
 
 /**
  * Creates an immutable audit log entry in the backend.
@@ -37,3 +37,4 @@ module.exports = {
   createAuditLog,
   createSecurityEvent
 };
+

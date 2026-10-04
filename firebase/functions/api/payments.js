@@ -3,7 +3,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { requireAuthenticatedUser } = require("../shared/auth");
 const { createAuditLog, createSecurityEvent } = require("../shared/audit");
 
-const db = getFirestore();
+let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = getFirestore(); const val = _db[prop]; return typeof val === 'function' ? val.bind(_db) : val; }});
 
 // In a real implementation, Razorpay SDK would be initialized here using environment secrets
 // const Razorpay = require('razorpay');
@@ -186,3 +186,4 @@ exports.verifyPayment = onCall(async (request) => {
     throw new HttpsError("internal", "Payment verification failed.");
   }
 });
+

@@ -3,7 +3,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { requireAuthenticatedUser, requirePermission, requireAdmin } = require("../shared/auth");
 const { createAuditLog } = require("../shared/audit");
 
-const db = getFirestore();
+let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = getFirestore(); const val = _db[prop]; return typeof val === 'function' ? val.bind(_db) : val; }});
 
 /**
  * Admin action: Approve verification for a specific participant.
@@ -183,3 +183,4 @@ exports.getVerificationDocumentUrl = onCall(async (request) => {
     throw new HttpsError("internal", "Failed to generate signed URL");
   }
 });
+

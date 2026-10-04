@@ -4,8 +4,8 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { requireAdmin } = require("../shared/auth");
 const { createAuditLog } = require("../shared/audit");
 
-const db = getFirestore();
-const auth = getAuth();
+let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = getFirestore(); const val = _db[prop]; return typeof val === 'function' ? val.bind(_db) : val; }});
+let _auth; const auth = new Proxy({}, { get: (target, prop) => { if (!_auth) _auth = getAuth(); const val = _auth[prop]; return typeof val === 'function' ? val.bind(_auth) : val; }});
 
 /**
  * Creates a volunteer account.
@@ -92,3 +92,5 @@ exports.disableVolunteer = onCall(async (request) => {
     throw new HttpsError("internal", error.message);
   }
 });
+
+

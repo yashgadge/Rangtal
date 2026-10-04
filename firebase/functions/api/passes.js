@@ -4,7 +4,7 @@ const { requireAuthenticatedUser } = require("../shared/auth");
 const { createAuditLog, createSecurityEvent } = require("../shared/audit");
 const crypto = require("crypto");
 
-const db = getFirestore();
+let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = getFirestore(); const val = _db[prop]; return typeof val === 'function' ? val.bind(_db) : val; }});
 
 /**
  * Generate a pass for a registration.
@@ -120,3 +120,4 @@ exports.generatePass = onCall(async (request) => {
     throw new HttpsError("internal", "Failed to generate pass");
   }
 });
+

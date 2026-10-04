@@ -3,7 +3,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { requireAuthenticatedUser } = require("../shared/auth");
 const { createAuditLog } = require("../shared/audit");
 
-const db = getFirestore();
+let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = getFirestore(); const val = _db[prop]; return typeof val === 'function' ? val.bind(_db) : val; }});
 
 exports.createRegistration = onCall(async (request) => {
   const uid = requireAuthenticatedUser(request);
@@ -137,3 +137,4 @@ exports.submitRegistration = onCall(async (request) => {
   
   return { success: true };
 });
+
