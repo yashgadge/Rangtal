@@ -5,12 +5,15 @@ const { setGlobalOptions } = require("firebase-functions/v2");
 setGlobalOptions({ maxInstances: 10, memory: "512MiB", timeoutSeconds: 60, invoker: "public" });
 
 // Initialize Firebase Admin once
-initializeApp();
+initializeApp({
+  storageBucket: "rhythm-rebel.appspot.com"
+});
 
 // API Exports
 const registrations = require("./api/registrations");
 exports.createRegistration = registrations.createRegistration;
 exports.submitRegistration = registrations.submitRegistration;
+exports.deleteRegistration = registrations.deleteRegistration;
 
 const payments = require("./api/payments");
 exports.createPaymentOrder = payments.createPaymentOrder;

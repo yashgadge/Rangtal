@@ -38,13 +38,15 @@ exports.createRegistration = onCall({ invoker: "public" }, async (request) => {
   const registrationData = {
     id: registrationRef.id,
     uid: uid,
+    email: request.auth?.token?.email || "",
     packageId: packageId,
+    packageName: packageData.name,
     collegeId: collegeId,
     type: type,
     participantCount: expectedCount,
     checkedInCount: 0,
-    verifiedCount: 0,
-    status: "DRAFT", // Always initial state
+    verifiedCount: expectedCount,
+    status: "VERIFIED", // Bypass manual verification for instant payment
     amount: authoritativeAmount,
     currency: "INR", // Or pull from package
     formFields: formFields || {},
@@ -60,19 +62,28 @@ exports.createRegistration = onCall({ invoker: "public" }, async (request) => {
 
     // Create Participant records
     for (const p of participants) {
-      if (!p.fullName) {
-        throw new HttpsError("invalid-argument", "Participant missing required fields.");
+      const pFullName = p.fullName || "Participant";
+      
+      const customData = {};
+      for (const [key, val] of Object.entries(p)) {
+        if (key.startsWith('custom_')) {
+          customData[key.replace('custom_', '')] = val;
+        }
       }
+
       const partRef = db.collection("participants").doc();
       batch.set(partRef, {
         id: partRef.id,
         registrationId: registrationRef.id,
         uid: uid,
-        fullName: p.fullName,
+        email: request.auth?.token?.email || "",
+        fullName: pFullName,
+        passType: packageData.name,
         gender: p.gender || '',
-        college: p.college || '',
+        collegeId: collegeId,
         mobile: p.mobile || '',
-        verificationStatus: "PENDING",
+        customFields: customData,
+        verificationStatus: "APPROVED",
         checkInStatus: "NOT_CHECKED_IN",
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp()
@@ -116,12 +127,13 @@ exports.submitRegistration = onCall({ invoker: "public" }, async (request) => {
     
     const regData = regSnap.data();
     if (regData.uid !== uid) throw new HttpsError("permission-denied", "Not your registration.");
-    if (regData.status !== "DRAFT" && regData.status !== "REQUIRES_CORRECTION") {
-      throw new HttpsError("failed-precondition", "Registration cannot be submitted from current state.");
+    const allowedStatuses = ["DRAFT", "REQUIRES_CORRECTION", "VERIFIED", "PAYMENT_PENDING", "PAYMENT_SUCCESS", "SUBMITTED"];
+    if (!allowedStatuses.includes(regData.status)) {
+      throw new HttpsError("failed-precondition", `Registration cannot be submitted from current state: ${regData.status}`);
     }
     
     t.update(regRef, {
-      status: "SUBMITTED",
+      status: regData.status === "DRAFT" || regData.status === "REQUIRES_CORRECTION" ? "SUBMITTED" : regData.status,
       verificationDocs: documents || [],
       updatedAt: FieldValue.serverTimestamp()
     });
@@ -136,6 +148,50 @@ exports.submitRegistration = onCall({ invoker: "public" }, async (request) => {
   });
   
   return { success: true };
+});
+
+exports.deleteRegistration = onCall({ invoker: "public" }, async (request) => {
+  const { requireAdmin } = require("../shared/auth");
+  const uid = requireAdmin(request);
+  const { registrationId } = request.data;
+  
+  if (!registrationId) throw new HttpsError("invalid-argument", "registrationId required.");
+
+  try {
+    const regRef = db.collection("registrations").doc(registrationId);
+    
+    // Using batch for atomic deletion of related records
+    const batch = db.batch();
+    batch.delete(regRef);
+
+    // Delete participants
+    const partsSnap = await db.collection("participants").where("registrationId", "==", registrationId).get();
+    partsSnap.docs.forEach(doc => batch.delete(doc.ref));
+
+    // Delete passes
+    const passesSnap = await db.collection("passes").where("registrationId", "==", registrationId).get();
+    passesSnap.docs.forEach(doc => batch.delete(doc.ref));
+
+    // Delete payments
+    const paymentsSnap = await db.collection("payments").where("registrationId", "==", registrationId).get();
+    paymentsSnap.docs.forEach(doc => batch.delete(doc.ref));
+
+    await batch.commit();
+
+    await createAuditLog({
+      actorId: uid,
+      actorRole: "ADMIN",
+      action: "REGISTRATION_DELETED",
+      targetType: "REGISTRATION",
+      targetId: registrationId,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error deleting registration:", error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", "Failed to delete registration and associated data.");
+  }
 });
 
 

@@ -62,7 +62,7 @@ export default function Navigation() {
       )}
 
       <div className="nav-right">
-        <button className="nav-cta" onClick={() => navigate('/register')}>
+        <button className="nav-cta" onClick={() => navigate('/account')}>
           GET YOUR PASS <span className="arrow">→</span>
         </button>
       </div>

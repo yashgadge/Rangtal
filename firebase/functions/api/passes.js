@@ -46,17 +46,30 @@ exports.generatePass = onCall({ invoker: "public" }, async (request) => {
       const passIds = [];
       const participantCount = regData.participantCount || partsSnap.docs.length;
       
+      const counterRef = db.collection("counters").doc("passes");
+      const counterSnap = await t.get(counterRef);
+      let currentSeq = counterSnap.exists && counterSnap.data().seq ? counterSnap.data().seq : 0;
+
+      // Helper to generate next readable ID
+      const getNextReadableId = (isGrp) => {
+        currentSeq++;
+        const prefix = isGrp ? "G" : (regData.type === 'COUPLE' ? "C" : (regData.type === 'GROUP' || regData.type?.startsWith('GROUP') ? "G" : "S"));
+        return `RAN-${prefix}-${String(currentSeq).padStart(3, '0')}`;
+      };
+
       // If group, generate one GROUP pass
       if (participantCount > 1) {
         const groupPassRef = db.collection("passes").doc();
         const secureCode = crypto.randomBytes(16).toString('hex');
         t.set(groupPassRef, {
           id: groupPassRef.id,
+          readableId: getNextReadableId(true),
           registrationId,
           uid: regData.uid,
           secureCode,
           status: "ACTIVE",
           isGroup: true,
+          regType: regData.packageName || regData.type || 'Group',
           participantCount,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp()
@@ -71,12 +84,15 @@ exports.generatePass = onCall({ invoker: "public" }, async (request) => {
         
         t.set(passRef, {
           id: passRef.id,
+          readableId: getNextReadableId(false),
           registrationId,
           participantId: partDoc.id,
           uid: regData.uid,
+          participantName: partDoc.data().fullName,
           secureCode, 
           status: "ACTIVE",
           isGroup: false,
+          regType: regData.packageName || regData.type || 'Single',
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp()
         });
@@ -91,6 +107,9 @@ exports.generatePass = onCall({ invoker: "public" }, async (request) => {
         
         passIds.push(passRef.id);
       }
+
+      // Save updated counter
+      t.set(counterRef, { seq: currentSeq }, { merge: true });
 
       // Update Registration State
       t.update(regRef, {

@@ -21,7 +21,7 @@ export default function Verification() {
 
   const [activeTab, setActiveTab] = useState('VERIFICATION_PENDING');
 
-  const { data: registrations = [], loading, error, refresh } = useFirebaseData(`verification_queue_${activeTab}`, async () => {
+  const { data, loading, error, refresh } = useFirebaseData(`verification_queue_${activeTab}`, async () => {
     let statuses = [activeTab];
     if (activeTab === 'VERIFICATION_PENDING') {
       statuses = ['VERIFICATION_PENDING', 'SUBMITTED'];
@@ -31,6 +31,8 @@ export default function Verification() {
     const snap = await getDocs(q);
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a,b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
   });
+
+  const registrations = data || [];
 
   useEffect(() => {
     if (registrations.length > 0 && !selectedReg) {
@@ -189,7 +191,7 @@ export default function Verification() {
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
                     <span style={{ fontWeight: 600, color: selectedReg?.id === reg.id ? 'var(--color-gold)' : 'var(--text-primary)' }}>{reg.type} Package</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{reg.createdAt?.toDate().toLocaleDateString()}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{reg.createdAt?.toDate?.()?.toLocaleDateString() || ''}</span>
                   </div>
                   <div style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                     ID: {reg.id.slice(0, 8)}...

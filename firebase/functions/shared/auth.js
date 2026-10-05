@@ -10,7 +10,8 @@ function requireAuthenticatedUser(request) {
 function requireAdmin(request) {
   requireAuthenticatedUser(request);
   const token = request.auth.token;
-  const isMaster = token.email === 'yashgadge11155@gmail.com';
+  const isMaster = token.email === 'yashgadge11155@gmail.com' || token.email === 'yashgadge14@gmail.com';
+  console.log("requireAdmin check:", { email: token.email, admin: token.admin, isMaster });
   if (!token.admin && !token.super_admin && !isMaster) {
     throw new HttpsError("permission-denied", "Admin privileges required.");
   }
@@ -20,7 +21,8 @@ function requireAdmin(request) {
 function requireSuperAdmin(request) {
   requireAuthenticatedUser(request);
   const token = request.auth.token;
-  const isMaster = token.email === 'yashgadge11155@gmail.com';
+  const isMaster = token.email === 'yashgadge11155@gmail.com' || token.email === 'yashgadge14@gmail.com';
+  console.log("requireSuperAdmin check:", { email: token.email, isMaster });
   if (!token.super_admin && !isMaster) {
     throw new HttpsError("permission-denied", "Super Admin privileges required.");
   }

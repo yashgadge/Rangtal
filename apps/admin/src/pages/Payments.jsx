@@ -53,16 +53,18 @@ export default function Payments() {
     { 
       header: "Payment ID", 
       accessorKey: "id", 
+      sortKey: "id",
       cell: (r) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontFamily: 'monospace', fontSize: '0.9rem' }}>
-          <CreditCard size={14} color="var(--text-muted)" /> {r.id.slice(0, 10)}...
+          <CreditCard size={14} color="var(--text-muted)" /> {r.id.slice(0, 8)}
         </div>
       )
     },
-    { header: "Participant", accessorKey: "participantName", cell: (r) => <span style={{ fontWeight: 500 }}>{r.participantName || 'N/A'}</span> },
-    { header: "Amount", accessorKey: "amount", cell: (r) => `₹${r.amount || 0}` },
-    { header: "Status", accessorKey: "status", cell: (r) => <span className={`badge ${r.status === 'SUCCESS' ? 'badge-success' : r.status === 'FAILED' ? 'badge-error' : 'badge-warning'}`}>{r.status}</span> },
-    { header: "Date", accessorKey: "createdAt", cell: (r) => r.createdAt?.toDate().toLocaleString() || 'N/A' },
+    { header: "Participant", accessorKey: "participantName", sortKey: "participantName", cell: (r) => <span style={{ fontWeight: 500 }}>{r.participantName || 'N/A'}</span> },
+    { header: "Amount", accessorKey: "amount", sortKey: "amount", cell: (r) => `₹${r.amount || 0}` },
+    { header: "Method", accessorKey: "method", sortKey: "method", cell: (r) => <span className="badge badge-neutral">{r.method || 'Online'}</span> },
+    { header: "Status", accessorKey: "status", sortKey: "status", cell: (r) => <span className={`badge ${r.status === 'SUCCESS' ? 'badge-success' : r.status === 'FAILED' ? 'badge-error' : 'badge-warning'}`}>{r.status}</span> },
+    { header: "Date", accessorKey: "createdAt", sortKey: (r) => r.createdAt?.toMillis ? r.createdAt.toMillis() : 0, cell: (r) => <span style={{fontSize: '0.85rem'}}>{r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : 'N/A'}</span> },
   ];
 
   return (
@@ -70,11 +72,6 @@ export default function Payments() {
       <PageHeader 
         title="Payment Logs" 
         description="Monitor financial transactions." 
-        actions={
-          <button className="btn btn-secondary" onClick={fetchPayments}>
-            <Download size={16} /> Export Recent
-          </button>
-        }
       />
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -83,6 +80,9 @@ export default function Payments() {
           data={filteredPayments} 
           loading={loading}
           error={error}
+          showSerial={true}
+          exportable={true}
+          exportFilename="payments_export.csv"
           onRowClick={setSelectedPayment}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
@@ -97,18 +97,20 @@ export default function Payments() {
       >
         {selectedPayment && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div className="surface" style={{ padding: '2rem', textAlign: 'center' }}>
-              <div style={{ fontSize: '2.5rem', fontWeight: 600, color: 'var(--color-gold)', fontFamily: 'var(--font-heading)', marginBottom: '0.5rem' }}>
+            <div className="surface" style={{ padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ fontSize: '2.5rem', fontWeight: 600, color: 'var(--color-gold)', fontFamily: 'var(--font-heading)' }}>
                 ₹{selectedPayment.amount}
               </div>
               <div className={`badge ${selectedPayment.status === 'SUCCESS' ? 'badge-success' : selectedPayment.status === 'FAILED' ? 'badge-error' : 'badge-warning'}`}>
                 {selectedPayment.status}
               </div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 500 }}>{selectedPayment.participantName || 'Unknown Participant'}</div>
+              {selectedPayment.participantEmail && <div style={{ color: 'var(--text-muted)' }}>{selectedPayment.participantEmail}</div>}
             </div>
 
             <div className="surface-flat" style={{ padding: '1.25rem' }}>
-              <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Transaction Metadata</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Transaction Details</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
                 <div>
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Payment ID</div>
                   <div style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{selectedPayment.id}</div>
@@ -118,12 +120,20 @@ export default function Payments() {
                   <div style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{selectedPayment.registrationId}</div>
                 </div>
                 <div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Reference</div>
-                  <div style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{selectedPayment.referenceId || 'N/A'}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Reference (Gateway ID)</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{selectedPayment.referenceId || selectedPayment.razorpayPaymentId || 'N/A'}</div>
                 </div>
                 <div>
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Timestamp</div>
-                  <div>{selectedPayment.createdAt?.toDate().toLocaleString()}</div>
+                  <div>{selectedPayment.createdAt?.toDate ? selectedPayment.createdAt.toDate().toLocaleString() : 'N/A'}</div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Payment Method</div>
+                  <div><span className="badge badge-neutral">{selectedPayment.method || 'Online (Razorpay)'}</span></div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Order ID</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{selectedPayment.orderId || 'N/A'}</div>
                 </div>
               </div>
             </div>

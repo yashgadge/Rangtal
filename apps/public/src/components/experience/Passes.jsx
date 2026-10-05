@@ -129,7 +129,7 @@ export default function Passes() {
                 <motion.button 
                   whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(255, 215, 0, 0.4)' }} 
                   whileTap={{ scale: 0.95 }} 
-                  onClick={() => navigate('/register')} 
+                  onClick={() => navigate('/account')} 
                   style={{ 
                     width: '100%', 
                     padding: '1rem', 

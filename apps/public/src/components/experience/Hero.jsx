@@ -278,7 +278,7 @@ export default function Hero() {
         >
           <button 
             className="glass-btn-content"
-            onClick={() => navigate('/register')}
+            onClick={() => navigate('/account')}
           >
             <span>GET YOUR PASS</span>
             <span className="cta-arrow">→</span>

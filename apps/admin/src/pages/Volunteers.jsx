@@ -27,11 +27,13 @@ export default function Volunteers() {
     status: 'ACTIVE'
   });
 
-  const { data: volunteers = [], loading, error, refresh } = useFirebaseData('admin_volunteers', async () => {
+  const { data, loading, error, refresh } = useFirebaseData('admin_volunteers', async () => {
     const q = query(collection(db, 'volunteers'));
     const snap = await getDocs(q);
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   });
+  
+  const volunteers = data || [];
 
   useEffect(() => {
     if (error) {

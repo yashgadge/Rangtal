@@ -23,14 +23,15 @@ exports.approveVerification = onCall({ invoker: "public" }, async (request) => {
       const partData = partSnap.data();
       const registrationId = partData.registrationId;
 
+      const regRef = db.collection("registrations").doc(registrationId);
+      const regSnap = await t.get(regRef);
+
       t.update(partRef, {
         verificationStatus: "APPROVED",
         updatedAt: FieldValue.serverTimestamp()
       });
 
       // Update registration verified count
-      const regRef = db.collection("registrations").doc(registrationId);
-      const regSnap = await t.get(regRef);
       if (regSnap.exists) {
         const regData = regSnap.data();
         const newVerifiedCount = (regData.verifiedCount || 0) + 1;
@@ -54,8 +55,9 @@ exports.approveVerification = onCall({ invoker: "public" }, async (request) => {
 
     return { success: true };
   } catch (error) {
+    console.error("approveVerification error:", error);
     if (error instanceof HttpsError) throw error;
-    throw new HttpsError("internal", "Failed to approve verification");
+    throw new HttpsError("internal", `Debug Error: ${error.message} - Stack: ${error.stack}`);
   }
 });
 
@@ -180,7 +182,7 @@ exports.getVerificationDocumentUrl = onCall({ invoker: "public" }, async (reques
   } catch (error) {
     console.error("Error generating signed URL:", error);
     if (error instanceof HttpsError) throw error;
-    throw new HttpsError("internal", "Failed to generate signed URL");
+    throw new HttpsError("internal", `Debug Error: ${error.message} - Stack: ${error.stack}`);
   }
 });
 

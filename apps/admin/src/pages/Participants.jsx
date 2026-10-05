@@ -1,20 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, limit, orderBy } from 'firebase/firestore';
+import { collection, query, getDocs, limit, orderBy, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
-import { Download } from 'lucide-react';
+import { Download, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
+import { functions } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
 
 export default function Participants() {
   const toast = useToast();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedParticipant, setSelectedParticipant] = useState(null);
+  const [previewParticipant, setPreviewParticipant] = useState(null);
+  const [selectedRegistration, setSelectedRegistration] = useState(null);
+  const [regLoading, setRegLoading] = useState(false);
+
+  useEffect(() => {
+    if (selectedParticipant?.registrationId) {
+      setRegLoading(true);
+      getDoc(doc(db, 'registrations', selectedParticipant.registrationId))
+        .then(snap => {
+          if (snap.exists()) setSelectedRegistration({ id: snap.id, ...snap.data() });
+          else setSelectedRegistration(null);
+        })
+        .catch(console.error)
+        .finally(() => setRegLoading(false));
+    } else {
+      setSelectedRegistration(null);
+    }
+  }, [selectedParticipant]);
 
   const { data, loading, error, refresh } = useFirebaseData('admin_participants', async () => {
     const q = query(collection(db, 'participants'), limit(100));
@@ -46,25 +66,65 @@ export default function Participants() {
     return 'badge-warning';
   }
 
+  async function handleDelete(e, participant) {
+    e.stopPropagation(); // Prevent row click from opening popup
+    if (!window.confirm(`Are you sure you want to completely delete ${participant.fullName} and their entire registration/passes? This cannot be undone.`)) {
+      return;
+    }
+    
+    const toastId = toast.loading('Deleting participant and associated data...');
+    try {
+      const deleteFn = httpsCallable(functions, 'deleteRegistration');
+      await deleteFn({ registrationId: participant.registrationId });
+      toast.update(toastId, 'success', 'Successfully deleted participant and related records');
+      refresh();
+    } catch (err) {
+      console.error(err);
+      toast.update(toastId, 'error', 'Error deleting participant', normalizeError(err));
+    }
+  }
+
   const columns = [
     { 
       header: "Participant", 
       accessorKey: "fullName", 
-      cell: (r) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div className="avatar" style={{ width: '32px', height: '32px', fontSize: '0.8rem' }}>
-            {r.fullName?.charAt(0).toUpperCase() || '?'}
+      sortKey: "fullName",
+      cell: (r) => {
+        const name = r.fullName || r.custom_full_name || r.custom_name || 'Participant';
+        const phone = r.phoneNumber || r.custom_phone_number || r.custom_mobile || 'No phone';
+        const gender = r.gender || r.custom_gender || 'N/A';
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div className="avatar" style={{ width: '32px', height: '32px', fontSize: '0.8rem' }}>
+              {name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div style={{ fontWeight: 600 }}>{name}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{gender} • {phone}</div>
+            </div>
           </div>
-          <div>
-            <div style={{ fontWeight: 600 }}>{r.fullName || 'N/A'}</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{r.gender}</div>
-          </div>
-        </div>
-      )
+        );
+      }
     },
-    { header: "ID", accessorKey: "id", cell: (r) => <span style={{fontFamily: 'monospace', fontSize: '0.85rem'}}>{r.id.slice(0,8)}...</span> },
-    { header: "Registration", accessorKey: "registrationId", cell: (r) => <span style={{fontFamily: 'monospace', fontSize: '0.85rem'}}>{r.registrationId?.slice(0,8)}...</span> },
-    { header: "Status", accessorKey: "verificationStatus", cell: (r) => <span className={`badge ${getBadgeColor(r.verificationStatus)}`}>{r.verificationStatus || 'PENDING'}</span> }
+    { header: "Pass Type", accessorKey: "passType", sortKey: "passType", cell: (r) => <span className="badge badge-info">{r.passType || (r.isGroup ? 'Group' : 'Single')}</span> },
+    { header: "Linked Email", accessorKey: "email", sortKey: "email", cell: (r) => <span style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>{r.email || 'Legacy'}</span> },
+    { header: "College", accessorKey: "college", sortKey: "college" },
+    { header: "ID", accessorKey: "id", cell: (r) => <span style={{fontFamily: 'monospace', fontSize: '0.85rem'}}>{r.id.slice(0,8)}</span> },
+    { header: "Status", accessorKey: "verificationStatus", sortKey: "verificationStatus", cell: (r) => <span className={`badge ${getBadgeColor(r.verificationStatus)}`}>{r.verificationStatus || 'PENDING'}</span> },
+    { header: "Date", accessorKey: "createdAt", sortKey: (r) => r.createdAt?.toMillis ? r.createdAt.toMillis() : 0, cell: (r) => <span style={{fontSize: '0.85rem'}}>{r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : 'N/A'}</span> },
+    {
+      header: "Actions",
+      cell: (r) => (
+        <button 
+          onClick={(e) => handleDelete(e, r)}
+          className="btn btn-icon"
+          style={{ padding: '0.4rem', color: 'var(--color-error)', background: 'rgba(255,0,0,0.1)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+          title="Delete Registration"
+        >
+          <Trash2 size={16} />
+        </button>
+      )
+    }
   ];
 
   return (
@@ -72,11 +132,6 @@ export default function Participants() {
       <PageHeader 
         title="Participants" 
         description="Manage all registered participants." 
-        actions={
-          <button className="btn btn-secondary" onClick={refresh}>
-            <Download size={16} /> Export Recent
-          </button>
-        }
       />
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -85,6 +140,9 @@ export default function Participants() {
           data={filteredParts} 
           loading={loading}
           error={error}
+          showSerial={true}
+          exportable={true}
+          exportFilename="participants_export.csv"
           onRowClick={setSelectedParticipant}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
@@ -101,11 +159,13 @@ export default function Participants() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
               <div className="avatar" style={{ width: '64px', height: '64px', fontSize: '1.5rem' }}>
-                {selectedParticipant.fullName?.charAt(0).toUpperCase() || '?'}
+                {(selectedParticipant.fullName || selectedParticipant.custom_full_name || selectedParticipant.custom_name || '?').charAt(0).toUpperCase()}
               </div>
               <div>
-                <h3 style={{ fontSize: '1.5rem', color: 'var(--text-primary)' }}>{selectedParticipant.fullName}</h3>
-                <div style={{ color: 'var(--text-secondary)' }}>{selectedParticipant.email || 'No email provided'}</div>
+                <h3 style={{ fontSize: '1.5rem', color: 'var(--text-primary)' }}>{selectedParticipant.fullName || selectedParticipant.custom_full_name || selectedParticipant.custom_name || 'Participant'}</h3>
+                <div style={{ color: 'var(--text-secondary)' }}>
+                  {selectedParticipant.email || selectedParticipant.custom_email || 'No email'} • {selectedParticipant.phoneNumber || selectedParticipant.custom_phone_number || selectedParticipant.custom_mobile || 'No phone'}
+                </div>
               </div>
             </div>
 
@@ -125,26 +185,209 @@ export default function Participants() {
                   <div>{selectedParticipant.gender}</div>
                 </div>
                 <div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Registration Time</div>
+                  <div>{selectedParticipant.createdAt?.toDate ? selectedParticipant.createdAt.toDate().toLocaleString() : 'N/A'}</div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Pass Type</div>
+                  <div><span className="badge badge-info">{selectedParticipant.passType || (selectedParticipant.isGroup ? 'Group' : 'Single')}</span></div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>College</div>
+                  <div style={{ fontWeight: 500 }}>{selectedParticipant.college || 'N/A'}</div>
+                </div>
+                <div>
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Verification</div>
                   <div><span className={`badge ${getBadgeColor(selectedParticipant.verificationStatus)}`}>{selectedParticipant.verificationStatus || 'PENDING'}</span></div>
                 </div>
+                {Object.keys(selectedParticipant)
+                  .filter(key => key.startsWith('custom_') && key !== 'custom_full_name' && key !== 'custom_phone_number' && key !== 'custom_gender')
+                  .map(key => (
+                    <div key={key}>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'capitalize' }}>
+                        {key.replace('custom_', '').replace(/_/g, ' ')}
+                      </div>
+                      <div style={{ fontWeight: 500 }}>
+                        {Array.isArray(selectedParticipant[key]) 
+                          ? selectedParticipant[key].join(', ') 
+                          : typeof selectedParticipant[key] === 'boolean' 
+                            ? (selectedParticipant[key] ? 'Yes' : 'No') 
+                            : String(selectedParticipant[key] || 'N/A')}
+                      </div>
+                    </div>
+                  ))}
               </div>
             </div>
             
             <div className="surface-flat" style={{ padding: '1.25rem' }}>
-               <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Digital Pass</h4>
-               {selectedParticipant.passIssued ? (
+              <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Verification Documents</h4>
+              {regLoading ? (
+                <div style={{ color: 'var(--text-muted)' }}>Loading documents...</div>
+              ) : selectedRegistration?.verificationDocs?.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {selectedRegistration.verificationDocs.map((doc, idx) => (
+                    <div key={idx} style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                      <div style={{ fontSize: '0.9rem', marginBottom: '0.5rem', color: 'var(--color-gold)' }}>{doc.filename || 'Uploaded Document'}</div>
+                      {doc.url ? (
+                        <a href={doc.url} target="_blank" rel="noreferrer" style={{ display: 'inline-block' }}>
+                          <img src={doc.url} alt="Verification" style={{ maxWidth: '100%', maxHeight: '150px', borderRadius: '4px', objectFit: 'contain' }} />
+                        </a>
+                      ) : (
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>URL not available</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ color: 'var(--text-muted)' }}>No verification documents uploaded.</div>
+              )}
+            </div>
+
+            <div className="surface-flat" style={{ padding: '1.25rem' }}>
+              <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Group Members (Same Registration)</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {data.filter(p => p.registrationId === selectedParticipant.registrationId).map(member => {
+                  const mName = member.fullName || member.custom_full_name || member.custom_name || 'Participant';
+                  const mGender = member.gender || member.custom_gender || 'N/A';
+                  return (
+                    <div 
+                      key={member.id} 
+                      onClick={() => member.id !== selectedParticipant.id && setPreviewParticipant(member)}
+                      style={{ 
+                        padding: '0.75rem', 
+                        background: member.id === selectedParticipant.id ? 'var(--color-primary)' : 'rgba(0,0,0,0.2)', 
+                        borderRadius: '8px', 
+                        cursor: 'pointer',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        border: '1px solid var(--border-light)'
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{mName} {member.id === selectedParticipant.id && '(Current)'}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{mGender}</div>
+                      </div>
+                      <div>
+                        <span className={`badge ${getBadgeColor(member.verificationStatus)}`}>{member.verificationStatus}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="surface-flat" style={{ padding: '1.25rem' }}>
+               <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Pass Status</h4>
+               {regLoading ? (
+                 <div style={{ color: 'var(--text-muted)' }}>Loading status...</div>
+               ) : selectedRegistration?.status === 'PASS_ISSUED' ? (
                   <div style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-success)' }}></div>
-                    Pass has been issued
+                    Pass has been successfully issued for this registration
                   </div>
                ) : (
-                  <div style={{ color: 'var(--text-muted)' }}>No pass issued yet.</div>
+                  <div style={{ color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div>No pass issued yet.</div>
+                    <div>Registration Status: <span style={{ color: 'var(--text-primary)' }}>{selectedRegistration?.status || 'N/A'}</span></div>
+                    <div>Payment Status: <span style={{ color: 'var(--text-primary)' }}>{selectedRegistration?.paymentStatus || 'N/A'}</span></div>
+                  </div>
                )}
+            </div>
+
+            <div className="surface" style={{ padding: '1.25rem', borderColor: 'rgba(198, 40, 40, 0.3)' }}>
+              <h4 style={{ color: 'var(--color-error)', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                Actions
+              </h4>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                Manage participant status and access.
+              </p>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button className="btn btn-danger" style={{ flex: 1 }} onClick={(e) => handleDelete(e, selectedParticipant)}>
+                  Delete Registration & All Members
+                </button>
+              </div>
             </div>
           </div>
         )}
       </DetailDrawer>
+
+      {/* Mini Preview Popup for Group Members */}
+      {previewParticipant && (
+        <div 
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(4px)'
+          }}
+          onClick={() => setPreviewParticipant(null)}
+        >
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '16px',
+              padding: '2rem',
+              width: '90%',
+              maxWidth: '350px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.4)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div className="avatar" style={{ width: '48px', height: '48px', fontSize: '1.2rem' }}>
+                {(previewParticipant.fullName || previewParticipant.custom_full_name || previewParticipant.custom_name || '?').charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1.2rem' }}>{previewParticipant.fullName || previewParticipant.custom_full_name || previewParticipant.custom_name || 'Participant'}</h4>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{previewParticipant.gender || previewParticipant.custom_gender || 'N/A'}</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Status</span>
+                <span className={`badge ${getBadgeColor(previewParticipant.verificationStatus)}`}>{previewParticipant.verificationStatus}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>College</span>
+                <span style={{ fontSize: '0.85rem' }}>{previewParticipant.college || 'N/A'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Pass Type</span>
+                <span style={{ fontSize: '0.85rem' }}>{previewParticipant.passType || 'Group'}</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button 
+                className="btn btn-secondary" 
+                style={{ flex: 1 }}
+                onClick={() => setPreviewParticipant(null)}
+              >
+                Close
+              </button>
+              <button 
+                className="btn btn-primary" 
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setSelectedParticipant(previewParticipant);
+                  setPreviewParticipant(null);
+                }}
+              >
+                View Full
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </motion.div>
   );
 }

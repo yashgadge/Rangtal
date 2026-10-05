@@ -59,16 +59,18 @@ export default function Passes() {
     { 
       header: "Pass ID", 
       accessorKey: "id", 
+      sortKey: "id",
       cell: (r) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontFamily: 'monospace', fontSize: '0.9rem' }}>
-          <Ticket size={14} color="var(--color-gold)" /> {r.id.slice(0, 10)}...
+          <Ticket size={14} color="var(--color-gold)" /> {r.readableId || r.id.slice(0, 10)}
         </div>
       )
     },
-    { header: "Participant", accessorKey: "participantName", cell: (r) => <span style={{ fontWeight: 500 }}>{r.participantName || 'Unknown'}</span> },
-    { header: "Registration", accessorKey: "registrationId", cell: (r) => <span style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{r.registrationId.slice(0, 8)}...</span> },
-    { header: "Status", accessorKey: "status", cell: (r) => <span className={`badge ${r.status === 'ACTIVE' ? 'badge-success' : r.status === 'REVOKED' ? 'badge-error' : 'badge-warning'}`}>{r.status}</span> },
-    { header: "Date Issued", accessorKey: "createdAt", cell: (r) => r.createdAt?.toDate().toLocaleDateString() || 'N/A' },
+    { header: "Participant", accessorKey: "participantName", sortKey: "participantName", cell: (r) => <span style={{ fontWeight: 500 }}>{r.participantName || 'Unknown'}</span> },
+    { header: "Registration", accessorKey: "registrationId", cell: (r) => <span style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{r.registrationId.slice(0, 8)}</span> },
+    { header: "Pass Type", accessorKey: "regType", sortKey: "regType", cell: (r) => <span className="badge badge-info">{r.regType || 'Single'}</span> },
+    { header: "Status", accessorKey: "status", sortKey: "status", cell: (r) => <span className={`badge ${r.status === 'ACTIVE' ? 'badge-success' : r.status === 'REVOKED' ? 'badge-error' : 'badge-warning'}`}>{r.status}</span> },
+    { header: "Date Issued", accessorKey: "createdAt", sortKey: (r) => r.createdAt?.toMillis ? r.createdAt.toMillis() : 0, cell: (r) => <span style={{fontSize: '0.85rem'}}>{r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : 'N/A'}</span> },
   ];
 
   return (
@@ -76,11 +78,6 @@ export default function Passes() {
       <PageHeader 
         title="Pass Management" 
         description="Monitor issued digital passes and their status." 
-        actions={
-          <button className="btn btn-secondary" onClick={refresh}>
-            <Download size={16} /> Export Recent
-          </button>
-        }
       />
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -89,6 +86,9 @@ export default function Passes() {
           data={filteredPasses} 
           loading={loading}
           error={error}
+          showSerial={true}
+          exportable={true}
+          exportFilename="passes_export.csv"
           onRowClick={setSelectedPass}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}

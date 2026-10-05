@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
+import CustomFieldsEditor from '../components/CustomFieldsEditor';
 import { motion } from 'framer-motion';
 import { Building, Plus } from 'lucide-react';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
@@ -23,6 +24,7 @@ export default function Colleges() {
     id: '',
     name: '',
     verified: true,
+    customFields: []
   });
 
   useEffect(() => {
@@ -55,7 +57,10 @@ export default function Colleges() {
   }
 
   function handleRowClick(col) {
-    setFormData({ ...col });
+    setFormData({ 
+      ...col, 
+      customFields: col.customFields || [] 
+    });
     setIsEditing(true);
   }
 
@@ -64,6 +69,7 @@ export default function Colleges() {
       id: `col-${Date.now()}`,
       name: '',
       verified: true,
+      customFields: []
     });
     setIsEditing(true);
   }
@@ -75,7 +81,8 @@ export default function Colleges() {
       const colRef = doc(db, 'colleges', formData.id);
       await setDoc(colRef, {
         name: formData.name,
-        verified: formData.verified
+        verified: formData.verified,
+        customFields: formData.customFields || []
       }, { merge: true });
       
       setIsEditing(false);
@@ -202,6 +209,11 @@ export default function Colleges() {
               />
             </label>
           </div>
+          
+          <CustomFieldsEditor 
+            fields={formData.customFields || []} 
+            onChange={(newFields) => setFormData({ ...formData, customFields: newFields })} 
+          />
           
           <div style={{ marginTop: 'auto', paddingTop: '2rem', display: 'flex', gap: '1rem' }}>
             <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setIsEditing(false)}>Cancel</button>

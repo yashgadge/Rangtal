@@ -29,29 +29,32 @@ export default function DetailDrawer({ isOpen, onClose, title, children }) {
               top: 0, left: 0, right: 0, bottom: 0,
               background: 'rgba(0,0,0,0.6)',
               backdropFilter: 'blur(4px)',
-              zIndex: 999
-            }}
-          />
-          
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-            className="drawer-content surface"
-            style={{
-              position: 'fixed',
-              top: 0, right: 0, bottom: 0,
-              width: '100%',
-              maxWidth: '500px',
-              zIndex: 1000,
+              zIndex: 999,
               display: 'flex',
-              flexDirection: 'column',
-              borderRadius: '16px 0 0 16px',
-              borderRight: 'none',
-              overflow: 'hidden'
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '1rem'
             }}
           >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="drawer-content surface"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: '100%',
+                maxWidth: '600px',
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                position: 'relative',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+              }}
+            >
             <div style={{ 
               padding: '1.5rem', 
               borderBottom: '1px solid var(--border-light)', 
@@ -80,6 +83,7 @@ export default function DetailDrawer({ isOpen, onClose, title, children }) {
             <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
               {children}
             </div>
+          </motion.div>
           </motion.div>
         </>
       )}

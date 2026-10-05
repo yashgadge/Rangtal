@@ -14,10 +14,12 @@ import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
 export default function Registrations() {
   const toast = useToast();
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [typeFilter, setTypeFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   
   const [selectedReg, setSelectedReg] = useState(null);
   const [participants, setParticipants] = useState([]);
+  const [passes, setPasses] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState(null);
@@ -41,6 +43,9 @@ export default function Registrations() {
     if (statusFilter !== 'ALL') {
       result = result.filter(r => r.status === statusFilter || r.verificationStatus === statusFilter);
     }
+    if (typeFilter !== 'ALL') {
+      result = result.filter(r => (r.type || '').toUpperCase().includes(typeFilter));
+    }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(r => 
@@ -50,22 +55,28 @@ export default function Registrations() {
       );
     }
     return result;
-  }, [registrations, statusFilter, searchTerm]);
+  }, [registrations, statusFilter, typeFilter, searchTerm]);
 
   async function handleRowClick(reg) {
     setSelectedReg(reg);
     setLoadingDetails(true);
     setDetailsError(null);
     setParticipants([]);
+    setPasses([]);
     setDocuments([]);
     setCorrectionReason('');
     
     try {
-      // Fix N+1 query: Only fetch participants for this specific registration
+      // Fetch participants for this specific registration
       const pQuery = query(collection(db, 'participants'), where('registrationId', '==', reg.id));
       const participantsSnap = await getDocs(pQuery);
       const parts = participantsSnap.docs.map(d => ({id: d.id, ...d.data()}));
       setParticipants(parts);
+      
+      // Fetch passes for this specific registration
+      const passQuery = query(collection(db, 'passes'), where('registrationId', '==', reg.id));
+      const passesSnap = await getDocs(passQuery);
+      setPasses(passesSnap.docs.map(d => ({id: d.id, ...d.data()})));
       
       const docs = [];
       if (reg.verificationDocs && reg.verificationDocs.length > 0) {
@@ -139,7 +150,7 @@ export default function Registrations() {
 
   const columns = [
     { header: "ID", accessorKey: "id", cell: (r) => <span style={{fontFamily: 'monospace'}}>{r.id.slice(0,8)}...</span> },
-    { header: "Type", accessorKey: "type" },
+    { header: "Type", accessorKey: "type", cell: (r) => <span className="badge badge-info">{r.type || 'SINGLE'}</span> },
     { header: "Amount", accessorKey: "amount", cell: (r) => `₹${r.amount || 0}` },
     { header: "Status", accessorKey: "status", cell: (r) => <span className={`badge ${getBadgeColor(r.status)}`}>{r.status}</span> },
     { header: "Date", accessorKey: "createdAt", cell: (r) => r.createdAt?.toDate().toLocaleDateString() || 'N/A' }
@@ -168,20 +179,33 @@ export default function Registrations() {
           onSearchChange={setSearchTerm}
           searchPlaceholder="Search recent registrations..."
           actions={
-            <select 
-              value={statusFilter} 
-              onChange={e => setStatusFilter(e.target.value)}
-              className="form-input"
-              style={{ width: 'auto', padding: '0.5rem', height: '100%' }}
-            >
-              <option value="ALL">All Statuses</option>
-              <option value="SUBMITTED">Submitted</option>
-              <option value="VERIFICATION_PENDING">Verification Pending</option>
-              <option value="VERIFIED">Verified</option>
-              <option value="REQUIRES_CORRECTION">Requires Correction</option>
-              <option value="PAYMENT_SUCCESS">Payment Success</option>
-              <option value="PASS_ISSUED">Pass Issued</option>
-            </select>
+            <div style={{ display: 'flex', gap: '0.5rem', height: '100%' }}>
+              <select 
+                value={typeFilter} 
+                onChange={e => setTypeFilter(e.target.value)}
+                className="form-input"
+                style={{ width: 'auto', padding: '0.5rem' }}
+              >
+                <option value="ALL">All Types</option>
+                <option value="SINGLE">Single</option>
+                <option value="COUPLE">Couple</option>
+                <option value="GROUP">Group</option>
+              </select>
+              <select 
+                value={statusFilter} 
+                onChange={e => setStatusFilter(e.target.value)}
+                className="form-input"
+                style={{ width: 'auto', padding: '0.5rem' }}
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="SUBMITTED">Submitted</option>
+                <option value="VERIFICATION_PENDING">Verification Pending</option>
+                <option value="VERIFIED">Verified</option>
+                <option value="REQUIRES_CORRECTION">Requires Correction</option>
+                <option value="PAYMENT_SUCCESS">Payment Success</option>
+                <option value="PASS_ISSUED">Pass Issued</option>
+              </select>
+            </div>
           }
         />
       </div>
@@ -226,6 +250,16 @@ export default function Registrations() {
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Stats</div>
                   <div>{selectedReg.verifiedCount || 0} Verified, {selectedReg.checkedInCount || 0} Checked-In</div>
                 </div>
+                {passes.length > 0 && (
+                  <div style={{ gridColumn: 'span 2', marginTop: '0.5rem', borderTop: '1px solid var(--border-light)', paddingTop: '0.5rem' }}>
+                    <div style={{ color: 'var(--color-success)', fontSize: '0.8rem', marginBottom: '0.25rem' }}>Issued Passes (IDs)</div>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      {passes.map(p => (
+                        <span key={p.id} className="badge badge-success" style={{ fontFamily: 'monospace' }}>{p.readableId || p.id.slice(0,8)}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
