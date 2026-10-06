@@ -1,6 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const { requirePermission } = require("../shared/auth");
+const { requirePermission, requireAnyPermission } = require("../shared/auth");
 const { createAuditLog, createSecurityEvent } = require("../shared/audit");
 
 let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = getFirestore(); const val = _db[prop]; return typeof val === 'function' ? val.bind(_db) : val; }});
@@ -62,8 +62,8 @@ exports.verifyPass = onCall({ invoker: "public" }, async (request) => {
 /**
  * Validates a pass and checks in the participant transactionally.
  */
-exports.checkInParticipant = onCall({ invoker: "public" }, async (request) => {
-  const uid = requirePermission(request, "SCAN_PASS");
+exports.checkInParticipantV2 = onCall({ invoker: "public" }, async (request) => {
+  const uid = requireAnyPermission(request, ["SCAN_PASS", "MANUAL_CHECKIN"]);
   const { secureCode } = request.data;
   
   if (!secureCode) {
@@ -119,11 +119,13 @@ exports.checkInParticipant = onCall({ invoker: "public" }, async (request) => {
       });
 
       // 6. Update Registration Check-in Count
-      const regRef = db.collection("registrations").doc(passData.registrationId);
-      t.update(regRef, {
-        checkedInCount: FieldValue.increment(1),
-        updatedAt: FieldValue.serverTimestamp()
-      });
+      if (passData.registrationId) {
+        const regRef = db.collection("registrations").doc(passData.registrationId);
+        t.update(regRef, {
+          checkedInCount: FieldValue.increment(1),
+          updatedAt: FieldValue.serverTimestamp()
+        });
+      }
 
       return { 
         success: true, 
@@ -163,8 +165,8 @@ exports.checkInParticipant = onCall({ invoker: "public" }, async (request) => {
 /**
  * Checks in multiple members of a group via the Group Pass.
  */
-exports.checkInGroupMembers = onCall({ invoker: "public" }, async (request) => {
-  const uid = requirePermission(request, "SCAN_PASS");
+exports.checkInGroupMembersV2 = onCall({ invoker: "public" }, async (request) => {
+  const uid = requireAnyPermission(request, ["SCAN_PASS", "MANUAL_CHECKIN"]);
   const { secureCode, selectedParticipantIds } = request.data;
   
   if (!secureCode || !Array.isArray(selectedParticipantIds) || selectedParticipantIds.length === 0) {
@@ -236,7 +238,7 @@ exports.checkInGroupMembers = onCall({ invoker: "public" }, async (request) => {
         checkedInIds.push(partId);
       }
       
-      if (successfulCheckins > 0) {
+      if (successfulCheckins > 0 && registrationId) {
         // Update Registration Check-in Count
         const regRef = db.collection("registrations").doc(registrationId);
         t.update(regRef, {

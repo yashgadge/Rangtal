@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { useFirebaseData } from '../../../../../shared/hooks/useFirebaseData.js';
 import './Scenes.css';
 
 const DandiyaIcon = ({ size = 60, className = '' }) => (
@@ -29,6 +30,13 @@ export default function Passes() {
   const navigate = useNavigate();
   const [packages, setPackages] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const { data: settings } = useFirebaseData('passes_event_settings', async () => {
+    const snap = await getDoc(doc(db, 'eventSettings', 'global'));
+    return snap.exists() ? snap.data() : {};
+  });
+
+  const isOpen = settings?.REGISTRATION?.registrationsOpen ?? true;
 
   useEffect(() => {
     async function loadPackages() {
@@ -82,6 +90,8 @@ export default function Passes() {
         >
           {packages.map((pkg, idx) => {
             const isPopular = pkg.type === 'COUPLE' || pkg.name.toLowerCase().includes('couple');
+            const isEarlyBirdActive = pkg.earlyBirdEnabled && (pkg.soldCount || 0) < (pkg.earlyBirdCapacity || 0);
+            const remainingEarlyBird = isEarlyBirdActive ? (pkg.earlyBirdCapacity || 0) - (pkg.soldCount || 0) : 0;
             return (
               <motion.div key={pkg.id} variants={itemVariants} className="pass-card" style={{ 
                 background: 'linear-gradient(145deg, rgba(60,15,30,0.4), rgba(26,5,11,0.7))', 
@@ -105,10 +115,22 @@ export default function Passes() {
                   <div style={{ position: 'absolute', top: '15px', right: '-35px', background: 'var(--color-gold)', color: 'black', padding: '0.25rem 3rem', transform: 'rotate(45deg)', fontSize: '0.75rem', fontWeight: 800, letterSpacing: '1px', boxShadow: '0 2px 10px rgba(0,0,0,0.5)', zIndex: 10 }}>POPULAR</div>
                 )}
                 
-                <h3 style={{ fontSize: '1.25rem', marginTop: '1rem', color: 'white', letterSpacing: '1px', textTransform: 'uppercase', position: 'relative', zIndex: 2 }}>{pkg.name}</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <h3 style={{ fontSize: '1.25rem', marginTop: '1rem', color: 'white', letterSpacing: '1px', textTransform: 'uppercase', position: 'relative', zIndex: 2 }}>{pkg.name}</h3>
+                  {isEarlyBirdActive && (
+                    <div className="badge" style={{ background: 'rgba(212,175,55,0.1)', color: 'var(--color-gold)', border: '1px solid rgba(212,175,55,0.2)', marginTop: '1rem', position: 'relative', zIndex: 2, display: 'inline-block' }}>
+                      ONLY {remainingEarlyBird} LEFT
+                    </div>
+                  )}
+                </div>
                 
-                <div className="price" style={{ fontSize: '3rem', fontWeight: 800, background: isPopular ? 'linear-gradient(to right, var(--color-gold), var(--color-orange))' : 'none', color: isPopular ? 'transparent' : 'white', WebkitBackgroundClip: isPopular ? 'text' : 'border-box', margin: '1rem 0', position: 'relative', zIndex: 2 }}>
-                  ₹{pkg.price}
+                <div className="price" style={{ margin: '1rem 0', position: 'relative', zIndex: 2, display: 'flex', alignItems: 'baseline', gap: '0.75rem' }}>
+                  {isEarlyBirdActive && (
+                    <span style={{ fontSize: '1.5rem', textDecoration: 'line-through', color: 'var(--text-muted)', fontWeight: 600 }}>₹{pkg.price}</span>
+                  )}
+                  <span style={{ fontSize: '3rem', fontWeight: 800, background: isPopular ? 'linear-gradient(to right, var(--color-gold), var(--color-orange))' : 'none', color: isPopular ? 'transparent' : 'white', WebkitBackgroundClip: isPopular ? 'text' : 'border-box' }}>
+                    ₹{isEarlyBirdActive ? pkg.earlyBirdPrice : pkg.price}
+                  </span>
                 </div>
                 
                 <div style={{ width: '100%', height: '1px', background: 'rgba(255,255,255,0.1)', margin: '1.5rem 0' }}></div>
@@ -118,34 +140,40 @@ export default function Passes() {
                 </div>
 
                 <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 2rem 0', color: 'var(--text-secondary)', fontSize: '0.95rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', position: 'relative', zIndex: 2 }}>
-                  <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                    <span style={{ color: 'var(--color-gold)' }}>✓</span> {pkg.participantCount} Participant{pkg.participantCount > 1 ? 's' : ''} Entry
-                  </li>
-                  <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                    <span style={{ color: 'var(--color-gold)' }}>✓</span> Special entry lane
-                  </li>
+                  {pkg.features && Array.isArray(pkg.features) && pkg.features.map((feature, i) => (
+                    <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <span style={{ color: 'var(--color-gold)' }}>✓</span> {feature}
+                    </li>
+                  ))}
+                  {(!pkg.features || pkg.features.length === 0) && (
+                    <li style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <span style={{ color: 'var(--color-gold)' }}>✓</span> Special entry lane
+                    </li>
+                  )}
                 </ul>
                 
                 <motion.button 
-                  whileHover={{ scale: 1.05, boxShadow: '0 0 20px rgba(255, 215, 0, 0.4)' }} 
-                  whileTap={{ scale: 0.95 }} 
-                  onClick={() => navigate('/account')} 
+                  whileHover={isOpen ? { scale: 1.05, boxShadow: '0 0 20px rgba(255, 215, 0, 0.4)' } : {}} 
+                  whileTap={isOpen ? { scale: 0.95 } : {}} 
+                  onClick={() => isOpen && navigate('/account')} 
+                  disabled={!isOpen}
                   style={{ 
                     width: '100%', 
                     padding: '1rem', 
-                    background: isPopular ? 'linear-gradient(135deg, var(--color-gold), var(--color-orange))' : 'rgba(255,255,255,0.05)', 
-                    color: isPopular ? '#000' : 'white', 
+                    background: !isOpen ? 'rgba(255,255,255,0.05)' : (isPopular ? 'linear-gradient(135deg, var(--color-gold), var(--color-orange))' : 'rgba(255,255,255,0.05)'), 
+                    color: !isOpen ? 'rgba(255,255,255,0.3)' : (isPopular ? '#000' : 'white'), 
                     fontWeight: 'bold', 
-                    border: isPopular ? 'none' : '1px solid rgba(255,255,255,0.2)', 
+                    border: !isOpen ? '1px solid rgba(255,255,255,0.1)' : (isPopular ? 'none' : '1px solid rgba(255,255,255,0.2)'), 
                     borderRadius: '12px', 
                     fontSize: '1rem', 
-                    cursor: 'pointer',
+                    cursor: isOpen ? 'pointer' : 'not-allowed',
                     textTransform: 'uppercase',
                     position: 'relative',
-                    zIndex: 2
+                    zIndex: 2,
+                    opacity: isOpen ? 1 : 0.6
                   }}
                 >
-                  Buy {pkg.name}
+                  {isOpen ? `Buy ${pkg.name}` : 'SOLD OUT'}
                 </motion.button>
               </motion.div>
             );

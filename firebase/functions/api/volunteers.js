@@ -95,3 +95,34 @@ exports.disableVolunteer = onCall({ invoker: "public" }, async (request) => {
 
 
 
+/**
+ * Updates a volunteer's permissions.
+ */
+exports.updateVolunteerPermissions = onCall({ invoker: "public" }, async (request) => {
+  const uid = requireAdmin(request);
+  const { admin, super_admin, email: userEmail } = request.auth.token;
+  const isMaster = userEmail === 'yashgadge11155@gmail.com';
+
+  const { uid: targetUid, permissions } = request.data;
+  if (!targetUid || !permissions) throw new HttpsError("invalid-argument", "Missing uid or permissions");
+
+  try {
+    await db.collection("volunteers").doc(targetUid).update({
+      permissions,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    await createAuditLog({
+      actorId: uid,
+      actorRole: (super_admin || isMaster) ? "SUPER_ADMIN" : "ADMIN",
+      action: "VOLUNTEER_PERMISSIONS_UPDATED",
+      targetType: "VOLUNTEER",
+      targetId: targetUid,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error updating permissions:", error);
+    throw new HttpsError("internal", error.message);
+  }
+});

@@ -48,12 +48,14 @@ export default function Verification() {
     }
   }, [error, toast]);
 
-  async function handleSelectRegistration(reg) {
+  async function handleSelectRegistration(reg, skipDocs = false) {
     setSelectedReg(reg);
     setLoadingDetails(true);
     setDetailsError(null);
     setParticipants([]);
-    setDocuments([]);
+    if (!skipDocs) {
+      setDocuments([]);
+    }
     setCorrectionReason('');
     
     try {
@@ -62,19 +64,26 @@ export default function Verification() {
       const parts = participantsSnap.docs.map(d => ({id: d.id, ...d.data()}));
       setParticipants(parts);
       
-      const docs = [];
-      if (reg.verificationDocs && reg.verificationDocs.length > 0) {
-        const getUrlFn = httpsCallable(functions, 'getVerificationDocumentUrl');
-        for (const docMeta of reg.verificationDocs) {
-          try {
-            const res = await getUrlFn({ path: docMeta.path });
-            docs.push({ name: docMeta.filename || docMeta.path.split('/').pop(), url: res.data.url });
-          } catch (e) {
-            console.error("Failed to fetch signed URL for", docMeta.path, e);
-          }
+      if (skipDocs && documents.length > 0) {
+        // Skip document fetching, keep existing
+      } else {
+        const docs = [];
+        if (reg.verificationDocs && reg.verificationDocs.length > 0) {
+          const getUrlFn = httpsCallable(functions, 'getVerificationDocumentUrl');
+          const docPromises = reg.verificationDocs.map(async (docMeta) => {
+            try {
+              const res = await getUrlFn({ path: docMeta.path });
+              return { name: docMeta.filename || docMeta.path.split('/').pop(), url: res.data.url };
+            } catch (e) {
+              console.error("Failed to fetch signed URL for", docMeta.path, e);
+              return null;
+            }
+          });
+          const results = await Promise.all(docPromises);
+          docs.push(...results.filter(Boolean));
         }
+        setDocuments(docs);
       }
-      setDocuments(docs);
       
     } catch (err) {
       console.error("Error fetching details", err);
@@ -93,8 +102,8 @@ export default function Verification() {
       const approveFn = httpsCallable(functions, 'approveVerification');
       await approveFn({ participantId });
       
-      // refresh details to show updated participant status
-      await handleSelectRegistration(selectedReg);
+      // refresh details to show updated participant status without refetching docs
+      await handleSelectRegistration(selectedReg, true);
       toast.update(toastId, 'success', 'Participant approved');
     } catch (err) {
       console.error(err);
@@ -116,7 +125,7 @@ export default function Verification() {
       const correctionFn = httpsCallable(functions, 'requestVerificationCorrection');
       await correctionFn({ participantId, reason: correctionReason });
       
-      await handleSelectRegistration(selectedReg);
+      await handleSelectRegistration(selectedReg, true);
       toast.update(toastId, 'success', 'Correction requested successfully');
     } catch (err) {
       console.error(err);

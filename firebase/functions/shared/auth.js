@@ -38,8 +38,19 @@ function requireVolunteer(request) {
 }
 
 function requirePermission(request, requiredPermission) {
-  requireVolunteer(request);
-  const perms = request.auth.token.permissions || [];
+  requireAuthenticatedUser(request);
+  const token = request.auth.token;
+  const isMaster = token.email === 'yashgadge11155@gmail.com' || token.email === 'yashgadge14@gmail.com';
+  
+  if (token.admin || token.super_admin || isMaster) {
+    return request.auth.uid; // Admins have all permissions
+  }
+  
+  if (!token.volunteer) {
+    throw new HttpsError("permission-denied", "Volunteer or Admin privileges required.");
+  }
+  
+  const perms = token.permissions || [];
   if (!perms.includes(requiredPermission)) {
     throw new HttpsError("permission-denied", `Permission ${requiredPermission} is required.`);
   }
@@ -54,11 +65,33 @@ function requireOwnership(request, targetUid) {
   return request.auth.uid;
 }
 
+function requireAnyPermission(request, requiredPermissionsArray) {
+  requireAuthenticatedUser(request);
+  const token = request.auth.token;
+  const isMaster = token.email === 'yashgadge11155@gmail.com' || token.email === 'yashgadge14@gmail.com';
+  
+  if (token.admin || token.super_admin || isMaster) {
+    return request.auth.uid; // Admins have all permissions
+  }
+  
+  if (!token.volunteer) {
+    throw new HttpsError("permission-denied", "Volunteer or Admin privileges required.");
+  }
+  
+  const perms = token.permissions || [];
+  const hasPerm = requiredPermissionsArray.some(p => perms.includes(p));
+  if (!hasPerm) {
+    throw new HttpsError("permission-denied", `One of permissions ${requiredPermissionsArray.join(',')} is required.`);
+  }
+  return request.auth.uid;
+}
+
 module.exports = {
   requireAuthenticatedUser,
   requireAdmin,
   requireSuperAdmin,
   requireVolunteer,
   requirePermission,
+  requireAnyPermission,
   requireOwnership
 };

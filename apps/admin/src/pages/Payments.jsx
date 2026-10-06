@@ -6,6 +6,7 @@ import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
 import { motion } from 'framer-motion';
 import { CreditCard, Download } from 'lucide-react';
+import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
 
 export default function Payments() {
   const [payments, setPayments] = useState([]);
@@ -15,6 +16,19 @@ export default function Payments() {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPayment, setSelectedPayment] = useState(null);
+
+  const { data: partsLookup } = useFirebaseData('admin_parts_for_payments', async () => {
+    const q = query(collection(db, 'participants'));
+    const snap = await getDocs(q);
+    return snap.docs.reduce((acc, doc) => {
+      const p = doc.data();
+      if (p.registrationId) {
+        if (!acc[p.registrationId]) acc[p.registrationId] = [];
+        acc[p.registrationId].push(p);
+      }
+      return acc;
+    }, {});
+  });
 
   useEffect(() => {
     fetchPayments();
@@ -26,7 +40,8 @@ export default function Payments() {
       setFilteredPayments(payments.filter(p => 
         (p.id && p.id.toLowerCase().includes(term)) || 
         (p.registrationId && p.registrationId.toLowerCase().includes(term)) ||
-        (p.participantName && p.participantName.toLowerCase().includes(term))
+        (p.gatewayPaymentId && p.gatewayPaymentId.toLowerCase().includes(term)) ||
+        (p.gatewayOrderId && p.gatewayOrderId.toLowerCase().includes(term))
       ));
     } else {
       setFilteredPayments(payments);
@@ -60,9 +75,27 @@ export default function Payments() {
         </div>
       )
     },
-    { header: "Participant", accessorKey: "participantName", sortKey: "participantName", cell: (r) => <span style={{ fontWeight: 500 }}>{r.participantName || 'N/A'}</span> },
+    { 
+      header: "Participant Info", 
+      accessorKey: "registrationId", 
+      cell: (r) => {
+        const parts = partsLookup?.[r.registrationId] || [];
+        const mainPart = parts[0] || {};
+        const name = mainPart.fullName || mainPart.customFields?.full_name || r.participantName || 'Unknown';
+        const email = mainPart.email || mainPart.customFields?.email || 'N/A';
+        const phone = mainPart.mobile || mainPart.phoneNumber || mainPart.customFields?.phone_number || 'N/A';
+        
+        return (
+          <div>
+            <div style={{ fontWeight: 600 }}>{name} {parts.length > 1 ? `(+${parts.length-1})` : ''}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{email}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{phone}</div>
+          </div>
+        );
+      }
+    },
     { header: "Amount", accessorKey: "amount", sortKey: "amount", cell: (r) => `₹${r.amount || 0}` },
-    { header: "Method", accessorKey: "method", sortKey: "method", cell: (r) => <span className="badge badge-neutral">{r.method || 'Online'}</span> },
+    { header: "Gateway ID", accessorKey: "gatewayPaymentId", cell: (r) => <span style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{r.gatewayPaymentId || r.gatewayOrderId || 'N/A'}</span> },
     { header: "Status", accessorKey: "status", sortKey: "status", cell: (r) => <span className={`badge ${r.status === 'SUCCESS' ? 'badge-success' : r.status === 'FAILED' ? 'badge-error' : 'badge-warning'}`}>{r.status}</span> },
     { header: "Date", accessorKey: "createdAt", sortKey: (r) => r.createdAt?.toMillis ? r.createdAt.toMillis() : 0, cell: (r) => <span style={{fontSize: '0.85rem'}}>{r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : 'N/A'}</span> },
   ];

@@ -4,7 +4,7 @@ import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import { motion } from 'framer-motion';
-import { Save, AlertTriangle, Database } from 'lucide-react';
+import { Save, AlertTriangle, Database, Plus, Trash2 } from 'lucide-react';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 
@@ -15,7 +15,8 @@ export default function Settings() {
     EVENT: { eventName: 'Rangtal Garba Night', eventDate: '', location: '' },
     REGISTRATION: { registrationsOpen: true, maxCapacity: 5000, requireCollegeId: true },
     VERIFICATION: { autoApprove: false },
-    PAYMENT: { razorpayEnabled: false, liveMode: false }
+    PAYMENT: { razorpayEnabled: false, liveMode: false },
+    HOSTEL: { buildings: ['Building A', 'Building B'] }
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -89,8 +90,10 @@ export default function Settings() {
 
   const tabs = [
     { id: 'EVENT', label: 'Event Configuration' },
+    { id: 'CONTACT', label: 'Contact Details' },
     { id: 'REGISTRATION', label: 'Registration' },
     { id: 'VERIFICATION', label: 'Verification' },
+    { id: 'HOSTEL', label: 'Hostel Settings' },
     { id: 'PAYMENT', label: 'Payment (Deferred)' }
   ];
 
@@ -167,14 +170,96 @@ export default function Settings() {
                     />
                   </div>
                   
-                  <div className="form-group" style={{ marginBottom: 0 }}>
+                  <div className="form-group">
                     <label className="form-label">Location</label>
-                    <input 
-                      type="text" 
+                    <textarea 
                       className="form-input" 
+                      rows="2"
                       value={settings.EVENT?.location || ''}
                       onChange={e => handleNestedChange('EVENT', 'location', e.target.value)}
                     />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Timing</label>
+                    <textarea 
+                      className="form-input" 
+                      rows="2"
+                      value={settings.EVENT?.timing || ''}
+                      onChange={e => handleNestedChange('EVENT', 'timing', e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Dress Code</label>
+                    <textarea 
+                      className="form-input" 
+                      rows="2"
+                      value={settings.EVENT?.dressCode || ''}
+                      onChange={e => handleNestedChange('EVENT', 'dressCode', e.target.value)}
+                    />
+                  </div>
+
+                  <div className="surface-flat" style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+                    <div>
+                      <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Show Student Badge</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Show 'ONLY FOR [COLLEGE] STUDENTS' on the landing page hero section.</div>
+                    </div>
+                    <label style={{ cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={settings.EVENT?.showStudentBadge ?? true} 
+                        onChange={e => handleNestedChange('EVENT', 'showStudentBadge', e.target.checked)} 
+                        style={{ width: '20px', height: '20px', accentColor: 'var(--color-gold)' }} 
+                      />
+                    </label>
+                  </div>
+                  
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Student Badge Text</label>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      value={settings.EVENT?.studentBadgeText || 'ONLY FOR JSPM STUDENTS'}
+                      onChange={e => handleNestedChange('EVENT', 'studentBadgeText', e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'CONTACT' && (
+                <div className="surface" style={{ padding: '2rem' }}>
+                  <h3 style={{ color: 'var(--text-primary)', marginBottom: '1.5rem' }}>Contact Details</h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                    Add up to two contact members to be displayed on the public landing page.
+                  </p>
+                  
+                  <h4 style={{ color: 'var(--color-gold)', marginBottom: '1rem', fontSize: '1rem' }}>Contact Member 1</h4>
+                  <div className="form-group">
+                    <label className="form-label">Name</label>
+                    <input type="text" className="form-input" value={settings.CONTACT?.member1Name || ''} onChange={e => handleNestedChange('CONTACT', 'member1Name', e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Phone Number</label>
+                    <input type="text" className="form-input" value={settings.CONTACT?.member1Phone || ''} onChange={e => handleNestedChange('CONTACT', 'member1Phone', e.target.value)} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: '2rem' }}>
+                    <label className="form-label">Email</label>
+                    <input type="email" className="form-input" value={settings.CONTACT?.member1Email || ''} onChange={e => handleNestedChange('CONTACT', 'member1Email', e.target.value)} />
+                  </div>
+
+                  <h4 style={{ color: 'var(--color-gold)', marginBottom: '1rem', fontSize: '1rem' }}>Contact Member 2 (Optional)</h4>
+                  <div className="form-group">
+                    <label className="form-label">Name</label>
+                    <input type="text" className="form-input" value={settings.CONTACT?.member2Name || ''} onChange={e => handleNestedChange('CONTACT', 'member2Name', e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Phone Number</label>
+                    <input type="text" className="form-input" value={settings.CONTACT?.member2Phone || ''} onChange={e => handleNestedChange('CONTACT', 'member2Phone', e.target.value)} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Email</label>
+                    <input type="email" className="form-input" value={settings.CONTACT?.member2Email || ''} onChange={e => handleNestedChange('CONTACT', 'member2Email', e.target.value)} />
                   </div>
                 </div>
               )}
@@ -208,7 +293,7 @@ export default function Settings() {
                     />
                   </div>
 
-                  <div className="surface-flat" style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 }}>
+                  <div className="surface-flat" style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
                     <div>
                       <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Require College ID Upload</div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Users must upload an ID document during registration.</div>
@@ -218,6 +303,21 @@ export default function Settings() {
                         type="checkbox" 
                         checked={settings.REGISTRATION?.requireCollegeId || false} 
                         onChange={e => handleNestedChange('REGISTRATION', 'requireCollegeId', e.target.checked)} 
+                        style={{ width: '20px', height: '20px', accentColor: 'var(--color-gold)' }} 
+                      />
+                    </label>
+                  </div>
+
+                  <div className="surface-flat" style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 0 }}>
+                    <div>
+                      <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Allow "Other" College Option</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Allow users to manually type their college name if it's not in the list.</div>
+                    </div>
+                    <label style={{ cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={settings.REGISTRATION?.allowOtherCollege || false} 
+                        onChange={e => handleNestedChange('REGISTRATION', 'allowOtherCollege', e.target.checked)} 
                         style={{ width: '20px', height: '20px', accentColor: 'var(--color-gold)' }} 
                       />
                     </label>
@@ -248,6 +348,66 @@ export default function Settings() {
                         If enabled, registrations will immediately proceed to payment (or pass issuance) without manual verification by an admin.
                       </div>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'HOSTEL' && (
+                <div className="surface" style={{ padding: '2rem' }}>
+                  <h3 style={{ color: 'var(--text-primary)', marginBottom: '1.5rem' }}>JSPM Hostel Settings</h3>
+                  
+                  <div className="form-group">
+                    <label className="form-label">Hostel Buildings</label>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                      These building names will appear in the dropdown when a female participant selects that they are from JSPM Hostel.
+                    </div>
+                    
+                    {(() => {
+                      const buildingsList = Array.isArray(settings.HOSTEL?.buildings) 
+                        ? settings.HOSTEL.buildings 
+                        : (typeof settings.HOSTEL?.buildings === 'string' 
+                            ? settings.HOSTEL.buildings.split(',').map(b => b.trim()).filter(b => b) 
+                            : []);
+
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                          {buildingsList.map((b, idx) => (
+                            <div key={idx} style={{ display: 'flex', gap: '0.5rem' }}>
+                              <input 
+                                type="text" 
+                                className="form-input" 
+                                value={b} 
+                                placeholder="Enter building name"
+                                onChange={(e) => {
+                                  const newList = [...buildingsList];
+                                  newList[idx] = e.target.value;
+                                  handleNestedChange('HOSTEL', 'buildings', newList);
+                                }}
+                              />
+                              <button 
+                                className="btn btn-secondary" 
+                                style={{ padding: '0.5rem' }}
+                                onClick={() => {
+                                  const newList = buildingsList.filter((_, i) => i !== idx);
+                                  handleNestedChange('HOSTEL', 'buildings', newList);
+                                }}
+                              >
+                                <Trash2 size={18} color="var(--color-error)" />
+                              </button>
+                            </div>
+                          ))}
+                          <button 
+                            className="btn btn-secondary" 
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', alignSelf: 'flex-start', marginTop: '0.5rem' }}
+                            onClick={() => {
+                                handleNestedChange('HOSTEL', 'buildings', [...buildingsList, '']);
+                            }}
+                          >
+                            <Plus size={16} /> Add Building
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}

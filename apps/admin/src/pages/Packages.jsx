@@ -23,7 +23,11 @@ export default function Packages() {
     soldCount: 0,
     active: true,
     description: '',
-    participantCount: 1
+    participantCount: 1,
+    features: '',
+    earlyBirdEnabled: false,
+    earlyBirdPrice: 0,
+    earlyBirdCapacity: 0
   });
 
   useEffect(() => {
@@ -46,7 +50,14 @@ export default function Packages() {
   }
 
   function handleEdit(pkg) {
-    setFormData({ ...pkg, participantCount: pkg.participantCount || (pkg.type === 'COUPLE' ? 2 : 1) });
+    setFormData({ 
+      ...pkg, 
+      participantCount: pkg.participantCount || (pkg.type === 'COUPLE' ? 2 : 1),
+      features: pkg.features ? pkg.features.join(', ') : '',
+      earlyBirdEnabled: pkg.earlyBirdEnabled || false,
+      earlyBirdPrice: pkg.earlyBirdPrice || 0,
+      earlyBirdCapacity: pkg.earlyBirdCapacity || 0
+    });
     setIsEditing(true);
   }
 
@@ -60,7 +71,11 @@ export default function Packages() {
       soldCount: 0,
       active: true,
       description: '',
-      participantCount: 1
+      participantCount: 1,
+      features: '',
+      earlyBirdEnabled: false,
+      earlyBirdPrice: 0,
+      earlyBirdCapacity: 0
     });
     setIsEditing(true);
   }
@@ -83,7 +98,11 @@ export default function Packages() {
         soldCount: Number(formData.soldCount),
         active: formData.active,
         description: formData.description,
-        participantCount: pCount
+        participantCount: pCount,
+        features: formData.features.split(',').map(s => s.trim()).filter(Boolean),
+        earlyBirdEnabled: formData.earlyBirdEnabled,
+        earlyBirdPrice: Number(formData.earlyBirdPrice),
+        earlyBirdCapacity: Number(formData.earlyBirdCapacity)
       }, { merge: true });
       
       setIsEditing(false);
@@ -234,7 +253,12 @@ export default function Packages() {
           
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">Description</label>
-            <textarea required value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="form-input" style={{ minHeight: '80px', resize: 'vertical' }} />
+            <textarea required value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="form-input" style={{ minHeight: '60px', resize: 'vertical' }} />
+          </div>
+
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Features (Comma separated)</label>
+            <textarea required value={formData.features} onChange={e => setFormData({...formData, features: e.target.value})} className="form-input" placeholder="Priority Entry, VIP Lounge, Refreshments" style={{ minHeight: '60px', resize: 'vertical' }} />
           </div>
           
           <div style={{ display: 'flex', gap: '1rem' }}>
@@ -268,6 +292,36 @@ export default function Packages() {
               <label className="form-label">Sold Count</label>
               <input type="number" min="0" value={formData.soldCount} onChange={e => setFormData({...formData, soldCount: e.target.value})} className="form-input" />
             </div>
+          </div>
+          
+          <div className="surface-flat" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontWeight: 500, color: 'var(--color-gold)' }}>Early Bird Offer</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Enable early bird pricing & limits</div>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input 
+                  type="checkbox" 
+                  checked={formData.earlyBirdEnabled} 
+                  onChange={e => setFormData({...formData, earlyBirdEnabled: e.target.checked})} 
+                  style={{ width: '20px', height: '20px', accentColor: 'var(--color-gold)' }} 
+                />
+              </label>
+            </div>
+            
+            {formData.earlyBirdEnabled && (
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                  <label className="form-label">Early Bird Price (₹)</label>
+                  <input type="number" min="0" value={formData.earlyBirdPrice} onChange={e => setFormData({...formData, earlyBirdPrice: e.target.value})} className="form-input" />
+                </div>
+                <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                  <label className="form-label">Early Bird Limit</label>
+                  <input type="number" min="1" value={formData.earlyBirdCapacity} onChange={e => setFormData({...formData, earlyBirdCapacity: e.target.value})} className="form-input" />
+                </div>
+              </div>
+            )}
           </div>
           
           <div className="surface-flat" style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

@@ -278,3 +278,11 @@ h1, h2, h3, h4, h5, h6 {
 .gap-4 { gap: 1rem; }
 .mt-4 { margin-top: 1rem; }
 .mb-4 { margin-bottom: 1rem; }
+
+
+#qr-reader video { object-fit: cover !important; width: 100% !important; height: 100% !important; }
+#qr-reader__scan_region { height: 100%; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

@@ -50,6 +50,7 @@ export default function Registrations() {
       const term = searchTerm.toLowerCase();
       result = result.filter(r => 
         r.id.toLowerCase().includes(term) || 
+        (r.email && r.email.toLowerCase().includes(term)) ||
         (r.uid && r.uid.toLowerCase().includes(term)) ||
         (r.type && r.type.toLowerCase().includes(term))
       );
@@ -81,14 +82,17 @@ export default function Registrations() {
       const docs = [];
       if (reg.verificationDocs && reg.verificationDocs.length > 0) {
         const getUrlFn = httpsCallable(functions, 'getVerificationDocumentUrl');
-        for (const docMeta of reg.verificationDocs) {
+        const docPromises = reg.verificationDocs.map(async (docMeta) => {
           try {
             const res = await getUrlFn({ path: docMeta.path });
-            docs.push({ name: docMeta.filename || docMeta.path.split('/').pop(), url: res.data.url });
+            return { name: docMeta.filename || docMeta.path.split('/').pop(), url: res.data.url };
           } catch (e) {
             console.error("Failed to fetch signed URL for", docMeta.path, e);
+            return null;
           }
-        }
+        });
+        const results = await Promise.all(docPromises);
+        docs.push(...results.filter(Boolean));
       }
       setDocuments(docs);
       
@@ -149,7 +153,7 @@ export default function Registrations() {
   }
 
   const columns = [
-    { header: "ID", accessorKey: "id", cell: (r) => <span style={{fontFamily: 'monospace'}}>{r.id.slice(0,8)}...</span> },
+    { header: "Account", accessorKey: "email", cell: (r) => <span style={{fontWeight: 500}}>{r.email || r.uid}</span> },
     { header: "Type", accessorKey: "type", cell: (r) => <span className="badge badge-info">{r.type || 'SINGLE'}</span> },
     { header: "Amount", accessorKey: "amount", cell: (r) => `₹${r.amount || 0}` },
     { header: "Status", accessorKey: "status", cell: (r) => <span className={`badge ${getBadgeColor(r.status)}`}>{r.status}</span> },
@@ -227,8 +231,8 @@ export default function Registrations() {
               <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Overview</h4>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>ID</div>
-                  <div style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{selectedReg.id}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Account</div>
+                  <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>{selectedReg.email || selectedReg.uid}</div>
                 </div>
                 <div>
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Type</div>

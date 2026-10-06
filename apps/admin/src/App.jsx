@@ -13,11 +13,14 @@ const Colleges = React.lazy(() => import('./pages/Colleges'));
 const Passes = React.lazy(() => import('./pages/Passes'));
 const Checkins = React.lazy(() => import('./pages/Checkins'));
 const Participants = React.lazy(() => import('./pages/Participants'));
+const PrintParticipants = React.lazy(() => import('./pages/PrintParticipants'));
 const Verification = React.lazy(() => import('./pages/Verification'));
 const Payments = React.lazy(() => import('./pages/Payments'));
 const AuditLogs = React.lazy(() => import('./pages/AuditLogs'));
 const Settings = React.lazy(() => import('./pages/Settings'));
 const Volunteers = React.lazy(() => import('./pages/Volunteers'));
+const Scanner = React.lazy(() => import('./pages/Scanner'));
+const HostelList = React.lazy(() => import('./pages/HostelList'));
 
 const ProtectedRoute = ({ children }) => {
   const { status } = useAuth();
@@ -51,6 +54,11 @@ function AppRoutes() {
       <NetworkIndicator />
       <Routes>
         <Route path="/login" element={<AdminLogin />} />
+      <Route path="/print-participants" element={
+        <ProtectedRoute>
+          <Suspense fallback={<PageLoader />}><PrintParticipants /></Suspense>
+        </ProtectedRoute>
+      } />
       <Route path="/" element={
         <ProtectedRoute>
           <AdminLayout />
@@ -89,6 +97,12 @@ function AppRoutes() {
         } />
         <Route path="audit-logs" element={
           <Suspense fallback={<PageLoader />}><AuditLogs /></Suspense>
+        } />
+        <Route path="scanner" element={
+          <Suspense fallback={<PageLoader />}><Scanner /></Suspense>
+        } />
+        <Route path="hostel" element={
+          <Suspense fallback={<PageLoader />}><HostelList /></Suspense>
         } />
         <Route path="settings" element={
           <Suspense fallback={<PageLoader />}><Settings /></Suspense>

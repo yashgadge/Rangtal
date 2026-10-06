@@ -45,19 +45,19 @@ service cloud.firestore {
     // 1. IDENTITY
     // ------------------------------------------------------------------------
     match /users/{uid} {
-      allow read: if isOwner(uid) || isAdmin();
+      allow read: if isOwner(uid) || isAdmin() || isVolunteer();
       allow create: if isOwner(uid) && request.resource.data.role == 'PARTICIPANT' && request.resource.data.uid == uid;
       allow update: if isOwner(uid) && notUpdating('uid') && notUpdating('role') && notUpdating('status') && notUpdating('createdAt');
       allow delete: if false; // Soft delete only
     }
 
     match /admins/{uid} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() || isVolunteer();
       allow write: if isSuperAdmin(); // Normal admin cannot write to admins
     }
 
     match /volunteers/{uid} {
-      allow read: if isAdmin() || isOwner(uid);
+      allow read: if isAdmin() || isOwner(uid) || hasPermission('VOLUNTEERS');
       allow write: if isAdmin(); // Volunteers cannot edit their own permissions/status
     }
 
@@ -88,21 +88,19 @@ service cloud.firestore {
     // 3. PARTICIPANTS & REGISTRATION
     // ------------------------------------------------------------------------
     match /participants/{participantId} {
-      // Volunteer read requires specific permission
-      allow read: if isAdmin() || isOwner(resource.data.uid) || (isVolunteer() && hasPermission('VIEW_PARTICIPANT_BASIC'));
+      allow read: if isAdmin() || isOwner(resource.data.uid) || isVolunteer();
       allow create: if isOwner(request.resource.data.uid) && request.resource.data.verificationStatus == 'PENDING';
       allow update: if isAdmin() || (isOwner(resource.data.uid) && notUpdating('uid') && notUpdating('verificationStatus') && notUpdating('createdAt'));
       allow delete: if false;
     }
 
     match /registrations/{registrationId} {
-      allow read: if isAdmin() || isOwner(resource.data.uid);
+      allow read: if isAdmin() || isOwner(resource.data.uid) || isVolunteer();
       allow create: if isOwner(request.resource.data.uid)
                     && request.resource.data.status in ['DRAFT', 'SUBMITTED']
                     && request.resource.data.verificationStatus == 'PENDING'
                     && request.resource.data.passStatus == 'PENDING';
       
-      // Client can only cancel or submit. Cannot jump to VERIFIED or PASS_ISSUED or PAYMENT_SUCCESS.
       allow update: if isAdmin() || (
         isOwner(resource.data.uid) 
         && notUpdating('uid') 
@@ -118,14 +116,14 @@ service cloud.firestore {
     }
     
     match /registrationParticipants/{relationshipId} {
-      allow read: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/registrations/$(resource.data.registrationId)).data.uid == request.auth.uid);
+      allow read: if isAdmin() || isVolunteer() || (isAuthenticated() && get(/databases/$(database)/documents/registrations/$(resource.data.registrationId)).data.uid == request.auth.uid);
       allow create: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/registrations/$(request.resource.data.registrationId)).data.uid == request.auth.uid);
       allow update: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/registrations/$(resource.data.registrationId)).data.uid == request.auth.uid && notUpdating('registrationId'));
       allow delete: if isAdmin();
     }
     
     match /couples/{coupleId} {
-      allow read: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/registrations/$(resource.data.registrationId)).data.uid == request.auth.uid);
+      allow read: if isAdmin() || isVolunteer() || (isAuthenticated() && get(/databases/$(database)/documents/registrations/$(resource.data.registrationId)).data.uid == request.auth.uid);
       allow create: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/registrations/$(request.resource.data.registrationId)).data.uid == request.auth.uid);
       allow update: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/registrations/$(resource.data.registrationId)).data.uid == request.auth.uid && notUpdating('registrationId'));
       allow delete: if isAdmin();
@@ -135,22 +133,22 @@ service cloud.firestore {
     // 4. PAYMENTS & PASSES (Backend Authoritative)
     // ------------------------------------------------------------------------
     match /payments/{paymentId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow read: if isAdmin() || hasPermission('PAYMENTS') || (isAuthenticated() && resource.data.uid == request.auth.uid);
       allow write: if false; // Strict: Must be created/updated by Razorpay Webhook Cloud Functions
     }
 
     match /paymentEvents/{eventId} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() || isVolunteer();
       allow write: if false; // Immutable, Cloud Functions only
     }
 
     match /passes/{passId} {
-      allow read: if isAdmin() || (isVolunteer() && hasPermission('SCAN_PASS')) || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow read: if isAdmin() || isVolunteer() || (isAuthenticated() && resource.data.uid == request.auth.uid);
       allow write: if false; // Generated by Cloud Functions only
     }
 
     match /passEvents/{eventId} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() || isVolunteer();
       allow write: if false; // Immutable, Cloud Functions only
     }
 
@@ -158,8 +156,7 @@ service cloud.firestore {
     // 5. CHECK-INS
     // ------------------------------------------------------------------------
     match /checkins/{checkinId} {
-      // Check-ins MUST be created by Cloud Functions using a transaction to prevent race conditions (double scans).
-      allow read: if isAdmin() || (isVolunteer() && hasPermission('SCAN_PASS'));
+      allow read: if isAdmin() || isVolunteer();
       allow write: if false; 
     }
 

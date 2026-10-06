@@ -1,8 +1,8 @@
 const { initializeApp } = require("firebase-admin/app");
 const { setGlobalOptions } = require("firebase-functions/v2");
 
-// Fix container timeout by increasing memory and allow public invocations
-setGlobalOptions({ maxInstances: 10, memory: "512MiB", timeoutSeconds: 60, invoker: "public" });
+// Fix container timeout by increasing memory and allow public invocations, keep 1 instance warm
+setGlobalOptions({ minInstances: 1, maxInstances: 10, memory: "512MiB", timeoutSeconds: 60, invoker: "public" });
 
 // Initialize Firebase Admin once
 initializeApp({
@@ -23,8 +23,8 @@ const passes = require("./api/passes");
 exports.generatePass = passes.generatePass;
 
 const checkins = require("./api/checkins");
-exports.checkInParticipant = checkins.checkInParticipant;
-exports.checkInGroupMembers = checkins.checkInGroupMembers;
+exports.checkInParticipantV2 = checkins.checkInParticipantV2;
+exports.checkInGroupMembersV2 = checkins.checkInGroupMembersV2;
 exports.verifyPass = checkins.verifyPass;
 
 const verification = require("./api/verification");
@@ -36,6 +36,7 @@ exports.getVerificationDocumentUrl = verification.getVerificationDocumentUrl;
 const volunteers = require("./api/volunteers");
 exports.createVolunteer = volunteers.createVolunteer;
 exports.disableVolunteer = volunteers.disableVolunteer;
+exports.updateVolunteerPermissions = volunteers.updateVolunteerPermissions;
 
 // Utility for development testing/initialization
 const forceReset = require("./forceReset");

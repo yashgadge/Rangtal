@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
+import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
+import { GoogleAuthProvider, onAuthStateChanged, signOut, signInWithRedirect } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, auth, functions, storage } from '../firebase';
@@ -12,6 +12,7 @@ import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
 import { useNavigate } from 'react-router-dom';
 import Stepper, { Step } from '../components/Stepper/Stepper.jsx';
 import ParticipantUploads from '../components/ui/ParticipantUploads.jsx';
+import CustomSelect from '../components/ui/CustomSelect.jsx';
 import './Register.css';
 
 export default function Register() {
@@ -24,6 +25,7 @@ export default function Register() {
   const [step, setStep] = useState(1);
   const [selectedPackage, setSelectedPackage] = useState(null);
   const [selectedCollege, setSelectedCollege] = useState('');
+  const [otherCollegeName, setOtherCollegeName] = useState('');
   
   // Array of participant objects
   const [participants, setParticipants] = useState([]);
@@ -60,6 +62,21 @@ export default function Register() {
     if (colError) toast.error('Colleges Load Failed', normalizeError(colError));
   }, [pkgsError, colError]);
 
+  // Prevent accidental refresh
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (step > 1 && step < 4) {
+        e.preventDefault();
+        e.returnValue = ''; // Required for Chrome
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [step]);
+
 
 
   const handlePackageSelect = (pkg) => {
@@ -72,9 +89,11 @@ export default function Register() {
   };
 
   const handleParticipantChange = (field, value) => {
-    const newParts = [...participants];
-    newParts[currentParticipantIndex] = { ...newParts[currentParticipantIndex], [field]: value };
-    setParticipants(newParts);
+    setParticipants(prevParts => {
+      const newParts = [...prevParts];
+      newParts[currentParticipantIndex] = { ...newParts[currentParticipantIndex], [field]: value };
+      return newParts;
+    });
   };
 
   const nextParticipant = () => {
@@ -93,22 +112,26 @@ export default function Register() {
     }
   };
 
+  const [processingStatus, setProcessingStatus] = useState(null);
+
   const handleSubmitRegistration = async () => {
     setSubmitting(true);
+    setProcessingStatus({ title: 'Creating Order...', desc: 'Please do not close this window.' });
     setError(null);
     const toastId = toast.loading('Creating your order...', 'Please do not close this window');
     try {
       // 1. Create Registration (Status becomes VERIFIED instantly)
-      // Strip File objects from payload to avoid httpsCallable crash
       const cleanedParticipants = participants.map(p => {
         const cleaned = {};
         for (const [key, value] of Object.entries(p)) {
           if (Array.isArray(value) && value.length > 0 && (value[0] instanceof File)) continue;
           cleaned[key] = value;
         }
-        // Ensure fullName exists to satisfy live backend validation before it gets updated
         if (!cleaned.fullName) {
           cleaned.fullName = cleaned.custom_name || cleaned.custom_full_name || "Participant";
+        }
+        if (selectedCollege === 'OTHER') {
+          cleaned.custom_other_college_name = otherCollegeName;
         }
         return cleaned;
       });
@@ -131,6 +154,7 @@ export default function Register() {
       const orderData = orderResponse.data;
 
       toast.dismiss(toastId);
+      setProcessingStatus(null); // Clear overlay while Razorpay is open
 
       // 3. Open Razorpay
       const options = {
@@ -142,6 +166,7 @@ export default function Register() {
         order_id: orderData.orderId,
         handler: async function (response) {
           const verifyingToast = toast.loading('Verifying payment...', 'Issuing your passes');
+          setProcessingStatus({ title: 'Verifying Payment...', desc: 'Securing your transaction' });
           try {
             // 4. Verify Payment
             const verifyPayment = httpsCallable(functions, 'verifyPayment');
@@ -152,25 +177,29 @@ export default function Register() {
             });
 
             toast.update(verifyingToast, 'loading', 'Uploading Documents...', 'Please wait...');
+            setProcessingStatus({ title: 'Uploading Documents...', desc: 'Securely saving your IDs' });
             await handleUploadAndSubmit(regId);
 
+            setProcessingStatus({ title: 'Generating Passes...', desc: 'Almost there!' });
             const generatePass = httpsCallable(functions, 'generatePass');
             await generatePass({ registrationId: regId });
 
             toast.update(verifyingToast, 'success', 'Payment Successful!', 'Redirecting to your dashboard...');
-            window.location.href = '/account';
+            setProcessingStatus({ title: 'Success!', desc: 'Redirecting to your dashboard...' });
+            navigate('/account');
           } catch (err) {
             console.error("Verification failed", err);
             toast.update(verifyingToast, 'error', 'Payment Failed', normalizeError(err));
             setError("Payment verification failed. Please contact support.");
             setSubmitting(false);
+            setProcessingStatus(null);
           }
         },
         modal: {
           ondismiss: function() {
             setSubmitting(false);
             toast.info('Payment Cancelled');
-            window.location.href = '/account'; 
+            navigate('/account'); 
           }
         },
         prefill: { email: user.email },
@@ -228,17 +257,52 @@ export default function Register() {
 
 
 
+  const { data: eventSettings } = useFirebaseData('register_event_settings', async () => {
+    const snap = await getDoc(doc(db, 'eventSettings', 'global'));
+    return snap.exists() ? snap.data() : {};
+  });
+
+  const isClosed = eventSettings && eventSettings.REGISTRATION && eventSettings.REGISTRATION.registrationsOpen === false;
+
   useEffect(() => {
     if (!authLoading && !user) {
       window.location.href = '/account';
     }
   }, [user, authLoading]);
+
+  // Prevent accidental refresh/back while filling form or processing payment
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (step > 1 || submitting || processingStatus) {
+        e.preventDefault();
+        e.returnValue = 'Are you sure you want to leave? Your registration progress may be lost.';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [step, submitting, processingStatus]);
+
   if (authLoading) {
     return (
       <div className="register-page app-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <motion.div animate={{ opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1.5 }} style={{ color: 'var(--color-ivory)', fontFamily: 'var(--font-display)', fontSize: '2rem', letterSpacing: '4px' }}>
           RANGTAL
         </motion.div>
+      </div>
+    );
+  }
+
+  if (isClosed) {
+    return (
+      <div className="register-page app-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+        <Package size={64} color="var(--color-gold)" style={{ marginBottom: '2rem' }} />
+        <h1 className="text-display-large" style={{ color: 'var(--color-ivory)', marginBottom: '1rem' }}>REGISTRATIONS CLOSED</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: '1.2rem', textAlign: 'center', maxWidth: '500px' }}>
+          We have reached maximum capacity or registrations have been disabled by the organizers. Stay tuned for future events!
+        </p>
+        <button className="btn btn-secondary" style={{ marginTop: '2rem' }} onClick={() => navigate('/account')}>
+          Go to Dashboard
+        </button>
       </div>
     );
   }
@@ -251,6 +315,40 @@ export default function Register() {
 
   return (
     <div className="register-page app-container">
+      <AnimatePresence>
+        {processingStatus && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed',
+              top: 0, left: 0, right: 0, bottom: 0,
+              background: 'rgba(10, 10, 10, 0.85)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              zIndex: 99999,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#FFF5E5'
+            }}
+          >
+            <div style={{ width: '80px', height: '80px', border: '4px solid rgba(212,175,55,0.2)', borderTopColor: '#D4AF37', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+            <style>{`
+              @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            `}</style>
+            <h2 style={{ marginTop: '2.5rem', fontFamily: 'var(--font-display)', letterSpacing: '3px', fontSize: '1.8rem', textAlign: 'center' }}>
+              {processingStatus.title}
+            </h2>
+            <p style={{ marginTop: '0.8rem', color: 'rgba(255,255,255,0.7)', fontSize: '1.1rem', textAlign: 'center', maxWidth: '80%' }}>
+              {processingStatus.desc}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="content-layer">
         
         <div className="register-container">
@@ -287,7 +385,9 @@ export default function Register() {
                     </div>
                   ) : packages && packages.length > 0 ? (
                     <div className="grid-packages">
-                      {packages.map(pkg => (
+                      {packages.map(pkg => {
+                        const isEarlyBirdActive = pkg.earlyBirdEnabled && (pkg.soldCount || 0) < (pkg.earlyBirdCapacity || 0);
+                        return (
                         <div 
                           key={pkg.id} 
                           className={`package-row ${selectedPackage?.id === pkg.id ? 'selected' : ''}`}
@@ -296,16 +396,24 @@ export default function Register() {
                           <div className="pkg-info">
                             <div className="pkg-name">
                               {pkg.name} <span className="badge">{pkg.type}</span>
+                                {isEarlyBirdActive && (
+                                  <span className="badge" style={{ background: 'rgba(212,175,55,0.1)', color: 'var(--color-gold)', marginLeft: '0.5rem', border: '1px solid rgba(212,175,55,0.2)' }}>
+                                    EARLY BIRD
+                                  </span>
+                                )}
                             </div>
                             <div className="pkg-desc">
                               {pkg.participantCount} Participant{pkg.participantCount > 1 ? 's' : ''} • {pkg.description.substring(0, 40)}{pkg.description.length > 40 ? '...' : ''}
                             </div>
                           </div>
-                          <div className="pkg-price-wrap">
-                            <div className="pkg-price">₹{pkg.price}</div>
+                          <div className="pkg-price-wrap" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center' }}>
+                            {isEarlyBirdActive && (
+                              <div style={{ fontSize: '0.85rem', textDecoration: 'line-through', color: 'rgba(255,255,255,0.4)', marginBottom: '0.2rem' }}>₹{pkg.price}</div>
+                            )}
+                            <div className="pkg-price">₹{isEarlyBirdActive ? pkg.earlyBirdPrice : pkg.price}</div>
                           </div>
                         </div>
-                      ))}
+                      )})}
                     </div>
                   ) : (
                     <p className="text-body" style={{ marginTop: '2rem' }}>No packages are currently available.</p>
@@ -339,21 +447,167 @@ export default function Register() {
 
                   {currentParticipantIndex === 0 && (
                     <div style={{ marginBottom: '1.5rem' }}>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
+                      <div className="form-group" style={{ marginBottom: selectedCollege === 'OTHER' ? '1rem' : 0 }}>
                         <label className="text-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           <Building size={14} /> Select Your College
                         </label>
-                        <select disabled={colLoading} className="form-select" value={selectedCollege} onChange={(e) => setSelectedCollege(e.target.value)}>
-                          <option value="" disabled>{colLoading ? 'Loading Colleges...' : 'Select College / Institution...'}</option>
-                          {colleges && colleges.map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ))}
-                        </select>
+                        <CustomSelect 
+                          disabled={colLoading} 
+                          value={selectedCollege} 
+                          onChange={(e) => setSelectedCollege(e.target.value)}
+                          placeholder={colLoading ? 'Loading Colleges...' : 'Select College / Institution...'}
+                          options={[
+                            ...(colleges ? colleges.map(c => ({ value: c.id, label: c.name })) : []),
+                            ...(eventSettings?.REGISTRATION?.allowOtherCollege ? [{ value: 'OTHER', label: 'Other (Not Listed)' }] : [])
+                          ]}
+                        />
+                        <div style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: 'rgba(239, 68, 68, 0.8)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500 }}>
+                          <AlertCircle size={12} /> College Pass-out students are strictly not allowed.
+                        </div>
                       </div>
+                      
+                      {selectedCollege === 'OTHER' && (
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label className="text-label">College Name <span style={{color: '#ef4444'}}>*</span></label>
+                          <input 
+                            type="text" 
+                            className="form-input" 
+                            value={otherCollegeName} 
+                            onChange={(e) => setOtherCollegeName(e.target.value)} 
+                            placeholder="Enter your college or institution name" 
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
 
                   <div style={{ marginBottom: '1rem' }}>
+                    <div className="form-group">
+                      <label className="text-label">Full Name <span style={{color: '#ef4444'}}>*</span></label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        value={participants[currentParticipantIndex]?.fullName || ''} 
+                        onChange={e => handleParticipantChange('fullName', e.target.value)} 
+                        placeholder="Participant's full name" 
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="text-label">Mobile Number <span style={{color: '#ef4444'}}>*</span></label>
+                      <input 
+                        type="tel" 
+                        className="form-input" 
+                        value={participants[currentParticipantIndex]?.mobile || ''} 
+                        onChange={e => handleParticipantChange('mobile', e.target.value.replace(/[^0-9]/g, ''))} 
+                        placeholder="10-digit mobile number" 
+                        maxLength={10}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="text-label">Gender <span style={{color: '#ef4444'}}>*</span></label>
+                      <CustomSelect 
+                        value={participants[currentParticipantIndex]?.gender || ''} 
+                        onChange={e => {
+                          handleParticipantChange('gender', e.target.value);
+                          if (e.target.value !== 'Female') {
+                            handleParticipantChange('isJspmHostel', '');
+                            handleParticipantChange('hostelBuilding', '');
+                            handleParticipantChange('hostelRoom', '');
+                          }
+                        }}
+                        placeholder="Select Gender..."
+                        options={['Male', 'Female', 'Other']}
+                      />
+                    </div>
+
+                    {participants[currentParticipantIndex]?.gender === 'Female' && (
+                      <div className="form-group" style={{ marginTop: '1rem' }}>
+                        <label className="text-label" style={{ color: 'var(--color-gold)' }}>Are you from JSPM Hostel? <span style={{color: '#ef4444'}}>*</span></label>
+                        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.75rem', marginTop: '-0.2rem' }}>
+                          We will take permission for you from the hostel authorities.
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', marginBottom: participants[currentParticipantIndex]?.isJspmHostel === 'Yes' ? '1.5rem' : 0 }}>
+                          <button
+                            type="button"
+                            onClick={() => handleParticipantChange('isJspmHostel', 'Yes')}
+                            style={{ 
+                              flex: 1, 
+                              padding: '0.85rem', 
+                              borderRadius: '8px', 
+                              border: '1px solid',
+                              borderColor: participants[currentParticipantIndex]?.isJspmHostel === 'Yes' ? 'var(--color-gold)' : 'rgba(255,255,255,0.1)',
+                              background: participants[currentParticipantIndex]?.isJspmHostel === 'Yes' ? 'rgba(212,175,55,0.1)' : 'rgba(0,0,0,0.3)',
+                              color: participants[currentParticipantIndex]?.isJspmHostel === 'Yes' ? 'var(--color-gold)' : 'var(--color-ivory)',
+                              cursor: 'pointer',
+                              fontWeight: participants[currentParticipantIndex]?.isJspmHostel === 'Yes' ? 500 : 400,
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleParticipantChange('isJspmHostel', 'No');
+                              handleParticipantChange('hostelBuilding', '');
+                              handleParticipantChange('hostelRoom', '');
+                            }}
+                            style={{ 
+                              flex: 1, 
+                              padding: '0.85rem', 
+                              borderRadius: '8px', 
+                              border: '1px solid',
+                              borderColor: participants[currentParticipantIndex]?.isJspmHostel === 'No' ? 'var(--color-gold)' : 'rgba(255,255,255,0.1)',
+                              background: participants[currentParticipantIndex]?.isJspmHostel === 'No' ? 'rgba(212,175,55,0.1)' : 'rgba(0,0,0,0.3)',
+                              color: participants[currentParticipantIndex]?.isJspmHostel === 'No' ? 'var(--color-gold)' : 'var(--color-ivory)',
+                              cursor: 'pointer',
+                              fontWeight: participants[currentParticipantIndex]?.isJspmHostel === 'No' ? 500 : 400,
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            No
+                          </button>
+                        </div>
+                        
+                        {participants[currentParticipantIndex]?.isJspmHostel === 'Yes' && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            <div>
+                              <label className="text-label" style={{ fontSize: '0.85rem' }}>Building Name <span style={{color: '#ef4444'}}>*</span></label>
+                              <CustomSelect 
+                                value={participants[currentParticipantIndex]?.hostelBuilding || ''}
+                                onChange={e => handleParticipantChange('hostelBuilding', e.target.value)}
+                                placeholder="Select Building..."
+                                options={Array.isArray(eventSettings?.HOSTEL?.buildings) 
+                                  ? eventSettings.HOSTEL.buildings.filter(b => b.trim()) 
+                                  : (typeof eventSettings?.HOSTEL?.buildings === 'string' 
+                                      ? eventSettings.HOSTEL.buildings.split(',').map(b => b.trim()).filter(b => b) 
+                                      : [])}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-label" style={{ fontSize: '0.85rem' }}>Room Number <span style={{color: '#ef4444'}}>*</span></label>
+                              <input 
+                                type="text" 
+                                className="form-input" 
+                                maxLength={3}
+                                value={participants[currentParticipantIndex]?.hostelRoom || ''}
+                                onChange={e => {
+                                  const val = e.target.value.replace(/\D/g, '');
+                                  handleParticipantChange('hostelRoom', val);
+                                }}
+                                placeholder="e.g. 101"
+                              />
+                              {participants[currentParticipantIndex]?.hostelRoom && participants[currentParticipantIndex].hostelRoom.length !== 3 && (
+                                <div style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '0.25rem' }}>Must be exactly 3 digits.</div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Dynamic Custom Fields based on College */}
                     {selectedCollege && colleges?.find(c => c.id === selectedCollege)?.customFields?.map(field => {
                       const value = participants[currentParticipantIndex]?.[`custom_${field.id}`] || '';
@@ -370,12 +624,12 @@ export default function Register() {
                           )}
                           
                           {field.type === 'dropdown' && (
-                            <select className="form-select" value={value} onChange={e => handleParticipantChange(`custom_${field.id}`, e.target.value)}>
-                              <option value="" disabled>Select an option...</option>
-                              {(field.options || []).map((opt, i) => (
-                                <option key={i} value={opt}>{opt}</option>
-                              ))}
-                            </select>
+                            <CustomSelect 
+                              value={value} 
+                              onChange={e => handleParticipantChange(`custom_${field.id}`, e.target.value)}
+                              placeholder="Select an option..."
+                              options={field.options || []}
+                            />
                           )}
                           
                           {field.type === 'checkbox' && (
@@ -398,6 +652,21 @@ export default function Register() {
                         </div>
                       );
                     })}
+
+                    {/* Generic College ID Upload if required globally */}
+                    {eventSettings?.REGISTRATION?.requireCollegeId && (
+                      <div className="form-group" style={{ marginTop: '1rem' }}>
+                        <label className="text-label">College ID Document <span style={{color: '#ef4444'}}>*</span></label>
+                        <div style={{ marginTop: '0.5rem' }}>
+                          <ParticipantUploads
+                            participantIndex={currentParticipantIndex}
+                            participantName="College ID Card"
+                            files={participants[currentParticipantIndex]?.collegeIdFiles || []}
+                            onChange={(newFiles) => handleParticipantChange('collegeIdFiles', newFiles)}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="btn-row" style={{ marginTop: '2rem' }}>
@@ -405,12 +674,19 @@ export default function Register() {
                     <button 
                       disabled={
                         (currentParticipantIndex === 0 && !selectedCollege) || 
+                        (currentParticipantIndex === 0 && selectedCollege === 'OTHER' && !otherCollegeName.trim()) ||
+                        !participants[currentParticipantIndex]?.fullName ||
+                        !participants[currentParticipantIndex]?.mobile || participants[currentParticipantIndex]?.mobile.length !== 10 ||
+                        !participants[currentParticipantIndex]?.gender ||
+                        (eventSettings?.REGISTRATION?.requireCollegeId && (!participants[currentParticipantIndex]?.collegeIdFiles || participants[currentParticipantIndex]?.collegeIdFiles.length === 0)) ||
                         (colleges?.find(c => c.id === selectedCollege)?.customFields?.some(f => {
                           if (!f.required) return false;
                           const val = participants[currentParticipantIndex]?.[`custom_${f.id}`];
                           if (Array.isArray(val)) return val.length === 0;
                           return !val;
-                        }))
+                        })) || 
+                        (participants[currentParticipantIndex]?.gender === 'Female' && !participants[currentParticipantIndex]?.isJspmHostel) ||
+                        (participants[currentParticipantIndex]?.isJspmHostel === 'Yes' && (!participants[currentParticipantIndex]?.hostelBuilding || participants[currentParticipantIndex]?.hostelRoom?.length !== 3))
                       }
                       onClick={nextParticipant} 
                       className="btn-primary"
@@ -433,7 +709,12 @@ export default function Register() {
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.25rem' }}>Total Amount</div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>₹{selectedPackage?.price}</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>
+                          ₹{selectedPackage?.earlyBirdEnabled && (selectedPackage?.soldCount || 0) < (selectedPackage?.earlyBirdCapacity || 0) ? selectedPackage?.earlyBirdPrice : selectedPackage?.price}
+                        </div>
+                        {selectedPackage?.earlyBirdEnabled && (selectedPackage?.soldCount || 0) < (selectedPackage?.earlyBirdCapacity || 0) && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--color-gold)', fontWeight: 600, marginTop: '4px', textAlign: 'right' }}>Early Bird Applied</div>
+                        )}
                       </div>
                     </div>
 
@@ -446,6 +727,24 @@ export default function Register() {
                       {participants.map((p, idx) => (
                         <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px' }}>
                           <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.5rem', textTransform: 'uppercase' }}>Person {idx + 1}</div>
+                          
+                          <div style={{ marginBottom: '0.5rem' }}>
+                            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>Full Name</div>
+                            <div style={{ fontSize: '0.95rem' }}>{p.fullName}</div>
+                          </div>
+                          
+                          <div style={{ marginBottom: '0.5rem' }}>
+                            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>Gender</div>
+                            <div style={{ fontSize: '0.95rem' }}>{p.gender}</div>
+                          </div>
+
+                          {p.isJspmHostel === 'Yes' && (
+                            <div style={{ marginBottom: '0.5rem', background: 'rgba(212,175,55,0.1)', padding: '0.5rem', borderRadius: '4px' }}>
+                              <div style={{ fontSize: '0.8rem', color: 'var(--color-gold)' }}>JSPM Hostel Details</div>
+                              <div style={{ fontSize: '0.95rem' }}>Building: {p.hostelBuilding} • Room: {p.hostelRoom}</div>
+                            </div>
+                          )}
+
                           {Object.keys(p).filter(k => k.startsWith('custom_') && p[k]).map(key => {
                             const fieldId = key.replace('custom_', '');
                             const fieldDef = colleges?.find(c => c.id === selectedCollege)?.customFields?.find(f => f.id === fieldId);

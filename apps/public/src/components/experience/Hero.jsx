@@ -12,7 +12,7 @@ export default function Hero() {
   const ctaRef = useRef(null);
   
   const [settings, setSettings] = useState({
-    EVENT: { eventName: 'Rangtal Garba Night', eventDate: '17 NOV 2026', location: 'JSPM UNIVERSITY GROUND', organizer: 'Rhythm Rebels' },
+    EVENT: { eventName: 'Rangtal Garba Night', eventDate: '17 NOV 2026', location: 'JSPM UNIVERSITY GROUND', organizer: 'JSPM Wagholi Campus' },
     REGISTRATION: { requireCollegeId: true }
   });
 
@@ -46,8 +46,13 @@ export default function Hero() {
       scroll.targetY = window.scrollY;
     };
 
-    window.addEventListener('mousemove', handleMouseMove, { passive: true });
-    window.addEventListener('scroll', handleScroll, { passive: true });
+    const isMobile = window.matchMedia('(max-width: 768px)').matches || ('ontouchstart' in window);
+
+    // Disable heavy parallax/scroll updates on mobile for rock-solid stability
+    if (!isMobile) {
+      window.addEventListener('mousemove', handleMouseMove, { passive: true });
+      window.addEventListener('scroll', handleScroll, { passive: true });
+    }
 
     const render = () => {
       // Smooth interpolation (lerp) for buttery camera movement
@@ -147,16 +152,8 @@ export default function Hero() {
             Z = 50: HERO DANCERS
         ========================================================= */}
         <div className="scene-layer layer-hero-dancers">
-          <motion.div 
-            className="hero-dancer hero-dancer-left"
-            animate={{ scale: [1, 1.03, 1], rotate: [0, 1, 0] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-          ></motion.div>
-          <motion.div 
-            className="hero-dancer hero-dancer-right"
-            animate={{ scale: [1, 1.02, 1], rotate: [0, -1, 0] }}
-            transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut", delay: 1 }}
-          ></motion.div>
+          <div className="hero-dancer hero-dancer-left"></div>
+          <div className="hero-dancer hero-dancer-right"></div>
         </div>
 
         {/* =========================================================
@@ -165,57 +162,48 @@ export default function Hero() {
         <div className="scene-layer layer-ui">
           <div className="hero-content-wrapper">
             
-            <motion.div 
-              className="hero-top-info"
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 1, delay: 0.5 }}
-            >
-              {settings.REGISTRATION?.requireCollegeId && (
-                <motion.div 
-                  className="luxury-badge"
-                  animate={{ boxShadow: ['0 0 10px rgba(255,215,0,0)', '0 0 20px rgba(255,215,0,0.4)', '0 0 10px rgba(255,215,0,0)'] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-                >
+            <div className="hero-top-info">
+              {(settings.EVENT?.showStudentBadge ?? true) && (
+                <div className="luxury-badge">
                   <span className="badge-icon">✦</span>
-                  ONLY FOR JSPM STUDENTS
+                  {settings.EVENT?.studentBadgeText || 'ONLY FOR JSPM STUDENTS'}
                   <span className="badge-icon">✦</span>
-                </motion.div>
+                </div>
               )}
               <div className="hero-kicker">THE BIGGEST GARBA MAHOTSAV</div>
-            </motion.div>
+            </div>
 
-            <motion.div 
-              className="hero-title-container"
-              initial={{ opacity: 0, y: 50, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 1.2, ease: "easeOut" }}
-            >
-              <motion.h1 
-                className="hero-title-main"
-                animate={{ y: [0, -15, 0] }}
-                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-              >
+            <div className="hero-title-container">
+              <h1 className="hero-title-main">
                 {settings.EVENT?.eventName?.split(' ')[0] || 'Rangtal'}
-              </motion.h1>
-              <motion.div 
-                className="hero-title-secondary"
-                animate={{ y: [0, -10, 0], rotate: [-3, -1, -3] }}
-                transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-              >
+              </h1>
+              <div className="hero-title-secondary">
                 {settings.EVENT?.eventName?.split(' ').slice(1).join(' ') || 'Garba Night'}
-              </motion.div>
-            </motion.div>
+              </div>
+            </div>
 
             <div className="hero-action-area">
               <div className="luxury-event-info">
-                <span className="info-val">{settings.EVENT?.eventDate || '17 NOV 2026'}</span>
+                <span className="info-val">
+                  {(() => {
+                    const dStr = settings.EVENT?.eventDate;
+                    if (!dStr) return '17-November - 2026';
+                    try {
+                      const d = new Date(dStr);
+                      if (isNaN(d.getTime())) return dStr;
+                      const day = d.getDate();
+                      const month = d.toLocaleString('default', { month: 'long' });
+                      const year = d.getFullYear();
+                      return `${day}-${month} - ${year}`;
+                    } catch { return dStr; }
+                  })()}
+                </span>
                 <span className="info-sep">|</span>
                 <span className="info-val">{settings.EVENT?.location || 'JSPM UNIVERSITY GROUND'}</span>
               </div>
-              <div className="hero-organized-by">
+              <div className="hero-organized-by" style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <div className="organized-label">ORGANISED BY</div>
-                <div className="organized-val">{settings.EVENT?.organizer || 'Rhythm Rebels'}</div>
+                <div className="organized-val">{settings.EVENT?.organizer || 'JSPM Wagholi Campus'}</div>
               </div>
             </div>
 

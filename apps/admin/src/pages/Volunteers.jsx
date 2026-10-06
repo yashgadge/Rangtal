@@ -77,7 +77,7 @@ export default function Volunteers() {
       const payload = {
         email: formData.email,
         password: formData.password,
-        displayName: formData.name,
+        name: formData.name,
         permissions: formData.permissions
       };
       
@@ -112,6 +112,28 @@ export default function Volunteers() {
     } catch (err) {
       console.error(err);
       toast.update(toastId, 'error', 'Error updating status', normalizeError(err));
+    }
+  }
+
+  async function handleUpdatePermissions(vol, newPermissions) {
+    const toastId = toast.loading('Updating permissions...');
+    try {
+      const functions = getFunctions();
+      const updateVolunteerPermissions = httpsCallable(functions, 'updateVolunteerPermissions');
+      
+      await updateVolunteerPermissions({
+        uid: vol.uid || vol.id,
+        permissions: newPermissions
+      });
+      
+      refresh();
+      if (selectedVolunteer?.id === vol.id) {
+         setSelectedVolunteer({...vol, permissions: newPermissions});
+      }
+      toast.update(toastId, 'success', 'Permissions updated successfully');
+    } catch (err) {
+      console.error(err);
+      toast.update(toastId, 'error', 'Error updating permissions', normalizeError(err));
     }
   }
 
@@ -221,9 +243,38 @@ export default function Volunteers() {
             <input type="text" required value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="form-input" placeholder="e.g. Volunteer123!" />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">Permissions (Comma separated)</label>
-            <input type="text" value={formData.permissions.join(', ')} onChange={e => setFormData({...formData, permissions: e.target.value.split(',').map(s=>s.trim())})} className="form-input" />
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Common: SCAN_PASS, MANUAL_CHECKIN</div>
+            <label className="form-label" style={{ marginBottom: '0.5rem' }}>Permissions</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              {[
+                { id: 'SCAN_PASS', label: 'Scan QR Passes' },
+                { id: 'MANUAL_CHECKIN', label: 'Manual Check-in' },
+                { id: 'REGISTRATIONS', label: 'Registrations' },
+                { id: 'PAYMENTS', label: 'Payments' },
+                { id: 'PASSES', label: 'Passes' },
+                { id: 'CHECKINS', label: 'Checkins History' },
+                { id: 'VERIFICATION', label: 'Verification' },
+                { id: 'PARTICIPANTS', label: 'Participants' },
+                { id: 'PACKAGES', label: 'Packages' },
+                { id: 'COLLEGES', label: 'Colleges' },
+                { id: 'VOLUNTEERS', label: 'Manage Volunteers' },
+                { id: 'SETTINGS', label: 'Settings' }
+              ].map(perm => (
+                <label key={perm.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={formData.permissions.includes(perm.id)}
+                    onChange={(e) => {
+                      const newPerms = e.target.checked 
+                        ? [...formData.permissions, perm.id] 
+                        : formData.permissions.filter(p => p !== perm.id);
+                      setFormData({...formData, permissions: newPerms});
+                    }}
+                    style={{ width: '18px', height: '18px', accentColor: 'var(--color-gold)' }}
+                  />
+                  <span style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{perm.label}</span>
+                </label>
+              ))}
+            </div>
           </div>
           <div style={{ marginTop: 'auto', paddingTop: '2rem', display: 'flex', gap: '1rem' }}>
             <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setIsEditing(false)}>Cancel</button>
@@ -261,13 +312,39 @@ export default function Volunteers() {
 
             <div className="surface-flat" style={{ padding: '1.25rem' }}>
               <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Permissions</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {(selectedVolunteer.permissions || []).map(p => (
-                   <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-primary)' }}>
-                     <Check size={16} color="var(--color-success)" />
-                     {p}
-                   </div>
-                ))}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                {[
+                  { id: 'SCAN_PASS', label: 'Scan QR Passes' },
+                  { id: 'MANUAL_CHECKIN', label: 'Manual Check-in' },
+                  { id: 'REGISTRATIONS', label: 'Registrations' },
+                  { id: 'PAYMENTS', label: 'Payments' },
+                  { id: 'PASSES', label: 'Passes' },
+                  { id: 'CHECKINS', label: 'Checkins History' },
+                  { id: 'VERIFICATION', label: 'Verification' },
+                  { id: 'PARTICIPANTS', label: 'Participants' },
+                  { id: 'PACKAGES', label: 'Packages' },
+                  { id: 'COLLEGES', label: 'Colleges' },
+                  { id: 'VOLUNTEERS', label: 'Manage Volunteers' },
+                  { id: 'SETTINGS', label: 'Settings' }
+                ].map(perm => {
+                  const hasPerm = (selectedVolunteer.permissions || []).includes(perm.id);
+                  return (
+                    <label key={perm.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={hasPerm}
+                        onChange={(e) => {
+                          const newPerms = e.target.checked 
+                            ? [...(selectedVolunteer.permissions || []), perm.id] 
+                            : (selectedVolunteer.permissions || []).filter(p => p !== perm.id);
+                          handleUpdatePermissions(selectedVolunteer, newPerms);
+                        }}
+                        style={{ width: '18px', height: '18px', accentColor: 'var(--color-gold)' }}
+                      />
+                      <span style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{perm.label}</span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
             

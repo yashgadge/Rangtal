@@ -3,7 +3,7 @@
   /* No background here, lets the global body radial gradients and bokeh show through! */
   color: var(--color-ivory);
   min-height: 100vh;
-  padding-top: 80px;
+  padding-top: 120px;
   padding-bottom: 60px;
   position: relative;
   font-family: 'Inter', -apple-system, sans-serif;
@@ -151,30 +151,32 @@
 
 /* Forms */
 .form-group {
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.75rem;
 }
 
 .text-label {
   display: block;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 240, 0.7);
-  margin-bottom: 0.5rem;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  font-size: 0.7rem;
+  color: rgba(255, 255, 240, 0.5);
+  margin-bottom: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 1px;
   text-transform: uppercase;
 }
 
 .form-input, .form-select {
   width: 100%;
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  padding: 0.75rem 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 0.875rem 1.25rem;
   color: var(--color-ivory);
   outline: none;
   font-family: inherit;
   font-size: 0.95rem;
-  transition: all 0.2s ease;
+  font-weight: 300;
+  transition: all 0.3s ease;
 }
 
 .form-select {
@@ -288,5 +290,61 @@
 .logout-btn:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #ffffff;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 600px) {
+  .register-page {
+    padding-top: 100px;
+    padding-bottom: 20px;
+  }
+  .register-container {
+    padding: 1rem;
+    border-radius: 12px;
+  }
+  .text-subtitle {
+    font-size: 1.1rem;
+    margin-bottom: 0.75rem;
+  }
+  .grid-packages {
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .package-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 0.5rem;
+  }
+  .pkg-info {
+    width: 68%;
+  }
+  .pkg-price-wrap {
+    width: 32%;
+    text-align: right;
+  }
+  .pkg-name {
+    font-size: 1rem;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  .pkg-desc {
+    font-size: 0.7rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .badge {
+    margin-left: 0 !important;
+    padding: 0.15rem 0.3rem;
+    font-size: 0.55rem;
+  }
+  .pkg-price {
+    font-size: 1.1rem;
+  }
+  .btn-row {
+    margin-top: 1rem;
+    padding-top: 1rem;
+  }
 }
 

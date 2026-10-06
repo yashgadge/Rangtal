@@ -22,6 +22,13 @@ export default function Account() {
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
+    // Process redirect result before listening to onAuthStateChanged
+    import('firebase/auth').then(({ getAuth, getRedirectResult }) => {
+      getRedirectResult(auth).catch((error) => {
+        console.error("Error from getRedirectResult:", error);
+      });
+    });
+
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
@@ -30,12 +37,21 @@ export default function Account() {
   }, []);
 
   const handleLogin = async () => {
-    const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth');
+    const { GoogleAuthProvider, signInWithPopup, signInWithRedirect, browserPopupRedirectResolver } = await import('firebase/auth');
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    
     try {
-      await signInWithPopup(auth, provider);
+      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     } catch (error) {
-      console.error("Error signing in", error);
+      console.warn("signInWithPopup failed, falling back to signInWithRedirect", error);
+      if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user' || error.message?.includes('Cross-Origin-Opener-Policy')) {
+        try {
+          await signInWithRedirect(auth, provider);
+        } catch (redirectError) {
+          console.error("Redirect fallback failed", redirectError);
+        }
+      }
     }
   };
 
@@ -183,7 +199,7 @@ export default function Account() {
       const pdfBlob = pdf.output('blob');
       const file = new File([pdfBlob], `Rangtal_Pass_${passId.slice(0,6)}.pdf`, { type: 'application/pdf' });
 
-      if (navigator.share && navigator.canShare({ files: [file] })) {
+      if (navigator.share && (typeof navigator.canShare === 'function' ? navigator.canShare({ files: [file] }) : true)) {
         await navigator.share({
           title: 'Rangtal Digital Pass',
           text: 'Here is my digital pass for Rangtal Garba Night!',
@@ -228,13 +244,14 @@ export default function Account() {
     );
   }
 
-  const allPasses = registrations?.flatMap(r => 
-    r.passes?.map(p => ({
+  const allPasses = registrations?.reduce((acc, r) => {
+    const passes = r.passes?.map(p => ({
       ...p,
       regType: r.type,
       participantName: p.isGroup ? `Group of ${p.participantCount}` : (r.participants?.find(part => part.id === p.participantId)?.fullName || 'Participant')
-    })) || []
-  ) || [];
+    })) || [];
+    return acc.concat(passes);
+  }, []) || [];
 
   return (
     <div style={{ position: 'relative', width: '100%', minHeight: '100vh', backgroundColor: '#1A050B', overflow: 'hidden' }}>
@@ -253,32 +270,32 @@ export default function Account() {
         <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '0 2rem' }}>
           
           {/* Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '3rem', borderBottom: '1px solid rgba(232,213,181,0.1)', paddingBottom: '2rem' }}>
+          <div className="account-header-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '3rem', borderBottom: '1px solid rgba(232,213,181,0.1)', paddingBottom: '2rem' }}>
             <div>
               <h1 style={{ fontFamily: '"Playfair Display", serif', fontSize: '3rem', fontWeight: 700, margin: 0, background: 'linear-gradient(to bottom, #FFF5E5 30%, #E8D5B5 80%, #B73568 150%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '0.02em' }}>My Dashboard</h1>
-              <div style={{ fontFamily: 'var(--font-body)', color: '#E8D5B5', marginTop: '0.5rem', letterSpacing: '2px', fontSize: '0.8rem', textTransform: 'uppercase', opacity: 0.8 }}>{user.email}</div>
+              <div style={{ fontFamily: 'var(--font-body)', color: '#E8D5B5', marginTop: '0.5rem', letterSpacing: '2px', fontSize: '0.8rem', textTransform: 'uppercase', opacity: 0.8, wordBreak: 'break-all' }}>{user.email}</div>
             </div>
-            <div style={{ display: 'flex', gap: '1.5rem' }}>
-              <GlassSurface width={200} height={45} borderRadius={8} blur={8} opacity={0.5} borderWidth={0.1} backgroundOpacity={0.1}>
-                <button onClick={() => navigate('/register')} style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', color: '#FFF5E5', fontFamily: 'var(--font-body)', fontSize: '0.85rem', letterSpacing: '2px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                  BUY MORE PASSES <ChevronRight size={16} />
+            <div className="header-actions" style={{ display: 'flex', gap: '1rem' }}>
+              <GlassSurface width={160} height={40} borderRadius={8} blur={8} opacity={0.5} borderWidth={0.1} backgroundOpacity={0.1}>
+                <button onClick={() => navigate('/register')} style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', color: '#FFF5E5', fontFamily: 'var(--font-body)', fontSize: '0.75rem', letterSpacing: '1px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                  BUY PASSES <ChevronRight size={14} />
                 </button>
               </GlassSurface>
-              <GlassSurface width={140} height={45} borderRadius={8} blur={8} opacity={0.3} borderWidth={0.1} backgroundOpacity={0.05}>
-                <button onClick={handleLogout} style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', color: '#E8D5B5', fontFamily: 'var(--font-body)', fontSize: '0.85rem', letterSpacing: '2px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: 0.8 }}>
-                  <LogOut size={16} /> SIGN OUT
+              <GlassSurface width={120} height={40} borderRadius={8} blur={8} opacity={0.3} borderWidth={0.1} backgroundOpacity={0.05}>
+                <button onClick={handleLogout} style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', color: '#E8D5B5', fontFamily: 'var(--font-body)', fontSize: '0.75rem', letterSpacing: '1px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: 0.8 }}>
+                  <LogOut size={14} /> LOGOUT
                 </button>
               </GlassSurface>
             </div>
           </div>
 
           {/* Navigation Tabs */}
-          <div style={{ display: 'flex', gap: '3rem', borderBottom: '1px solid rgba(232,213,181,0.05)', marginBottom: '3rem' }}>
+          <div className="account-tabs" style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid rgba(232,213,181,0.05)', marginBottom: '3rem', overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '0.5rem' }}>
             <button 
               onClick={() => setActiveTab('passes')}
               style={{ 
                 background: 'transparent', border: 'none', color: activeTab === 'passes' ? '#FFF5E5' : 'rgba(232,213,181,0.5)',
-                fontSize: '0.9rem', fontWeight: 600, padding: '0 0 1rem 0', cursor: 'pointer', letterSpacing: '3px', textTransform: 'uppercase',
+                fontSize: '0.85rem', fontWeight: 600, padding: '0 0 1rem 0', cursor: 'pointer', letterSpacing: '2px', textTransform: 'uppercase',
                 borderBottom: activeTab === 'passes' ? '2px solid #E8D5B5' : '2px solid transparent',
                 transition: 'all 0.3s ease', fontFamily: 'var(--font-body)'
               }}>
@@ -288,7 +305,7 @@ export default function Account() {
               onClick={() => setActiveTab('history')}
               style={{ 
                 background: 'transparent', border: 'none', color: activeTab === 'history' ? '#FFF5E5' : 'rgba(232,213,181,0.5)',
-                fontSize: '0.9rem', fontWeight: 600, padding: '0 0 1rem 0', cursor: 'pointer', letterSpacing: '3px', textTransform: 'uppercase',
+                fontSize: '0.85rem', fontWeight: 600, padding: '0 0 1rem 0', cursor: 'pointer', letterSpacing: '2px', textTransform: 'uppercase',
                 borderBottom: activeTab === 'history' ? '2px solid #E8D5B5' : '2px solid transparent',
                 transition: 'all 0.3s ease', fontFamily: 'var(--font-body)'
               }}>
@@ -300,39 +317,40 @@ export default function Account() {
             <div style={{ marginBottom: '4rem' }}>
               {allPasses.length > 0 ? (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                  <div className="collection-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                      <Ticket size={24} color="#E8D5B5" />
-                      <h2 style={{ fontSize: '1.5rem', color: '#FFF5E5', margin: 0, fontFamily: '"Playfair Display", serif', letterSpacing: '0.05em' }}>Your Collection</h2>
+                      <Ticket size={20} color="#E8D5B5" />
+                      <h2 style={{ fontSize: '1.25rem', color: '#FFF5E5', margin: 0, fontFamily: '"Playfair Display", serif', letterSpacing: '0.05em' }}>Your Collection</h2>
                     </div>
-                    <GlassSurface width={220} height={40} borderRadius={6} blur={10} opacity={0.6} borderWidth={0.1} backgroundOpacity={0.1}>
-                      <button disabled={downloading} onClick={() => downloadAllPassesPDF(allPasses)} style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', color: '#FFF5E5', fontFamily: 'var(--font-body)', fontSize: '0.75rem', letterSpacing: '1px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                        {downloading ? 'GENERATING...' : <><Download size={14} /> DOWNLOAD ALL PDF</>}
+                    <GlassSurface width={180} height={36} borderRadius={6} blur={10} opacity={0.6} borderWidth={0.1} backgroundOpacity={0.1}>
+                      <button disabled={downloading} onClick={() => downloadAllPassesPDF(allPasses)} style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', color: '#FFF5E5', fontFamily: 'var(--font-body)', fontSize: '0.65rem', letterSpacing: '1px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                        {downloading ? 'GENERATING...' : <><Download size={14} /> DOWNLOAD ALL</>}
                       </button>
                     </GlassSurface>
                   </div>
                   
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '2rem' }}>
+                  <div className="passes-grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '1.5rem' }}>
                     {allPasses.map(pass => (
                       <div key={pass.id}>
                         <motion.div 
+                          className="pass-card-ui"
                           whileHover={{ y: -5 }}
                           onClick={() => setSelectedPass(pass)}
                           style={{ 
                             background: 'rgba(20, 5, 10, 0.6)', backdropFilter: 'blur(16px)',
                             border: '1px solid rgba(232,213,181,0.15)', borderRadius: '16px', 
-                            padding: '2rem 1.5rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.3s ease',
+                            padding: '1.5rem 1rem', cursor: 'pointer', textAlign: 'center', transition: 'all 0.3s ease',
                             boxShadow: '0 10px 30px -10px rgba(0, 0, 0, 0.5)'
                           }}
                         >
-                          <div style={{ background: '#FFF5E5', padding: '1rem', borderRadius: '12px', display: 'inline-block', marginBottom: '1.5rem', boxShadow: '0 0 20px rgba(255,245,229,0.1)' }}>
-                            <QRCodeSVG value={pass.secureCode} size={160} bgColor={"#FFF5E5"} fgColor={"#1A050B"} level={"Q"} />
+                          <div className="qr-wrapper" style={{ background: '#FFF5E5', padding: '0.75rem', borderRadius: '12px', display: 'inline-block', marginBottom: '1rem', boxShadow: '0 0 20px rgba(255,245,229,0.1)' }}>
+                            <QRCodeSVG value={pass.secureCode} size={140} bgColor={"#FFF5E5"} fgColor={"#1A050B"} level={"Q"} />
                           </div>
-                          <div style={{ fontSize: '1.2rem', color: '#FFF5E5', fontFamily: '"Playfair Display", serif', fontWeight: 600, letterSpacing: '1px' }}>{pass.participantName}</div>
-                          <div style={{ fontSize: '0.7rem', color: '#E8D5B5', marginTop: '0.5rem', textTransform: 'uppercase', letterSpacing: '2px', opacity: 0.8 }}>{pass.regType} PASS</div>
+                          <div className="participant-name" style={{ fontSize: '1.1rem', color: '#FFF5E5', fontFamily: '"Playfair Display", serif', fontWeight: 600, letterSpacing: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pass.participantName}</div>
+                          <div style={{ fontSize: '0.65rem', color: '#E8D5B5', marginTop: '0.25rem', textTransform: 'uppercase', letterSpacing: '2px', opacity: 0.8 }}>{pass.regType} PASS</div>
                           
-                          <div style={{ marginTop: '1.5rem', borderTop: '1px solid rgba(232,213,181,0.1)', paddingTop: '1.5rem', display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
-                            <button onClick={(e) => { e.stopPropagation(); sharePassPDF(pass.id); }} style={{ padding: '0.5rem 1rem', background: 'rgba(232,213,181,0.1)', border: '1px solid rgba(232,213,181,0.2)', color: '#E8D5B5', borderRadius: '4px', fontSize: '0.7rem', letterSpacing: '1px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', transition: 'background 0.2s' }}>
+                          <div style={{ marginTop: '1rem', borderTop: '1px solid rgba(232,213,181,0.1)', paddingTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                            <button onClick={(e) => { e.stopPropagation(); sharePassPDF(pass.id); }} style={{ padding: '0.4rem 0.8rem', background: 'rgba(232,213,181,0.1)', border: '1px solid rgba(232,213,181,0.2)', color: '#E8D5B5', borderRadius: '4px', fontSize: '0.65rem', letterSpacing: '1px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', transition: 'background 0.2s' }}>
                               <Share2 size={12} /> Share
                             </button>
                           </div>

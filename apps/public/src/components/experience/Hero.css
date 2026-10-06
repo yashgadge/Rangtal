@@ -218,7 +218,14 @@
   background-position: bottom right;
   /* Interactive Parallax: slides left on scroll but stays anchored vertically */
   transform: translateX(calc(var(--scroll-y) * -0.2px));
+  animation: breatheDancerLeft 6s ease-in-out infinite;
 }
+
+@keyframes breatheDancerLeft {
+  0%, 100% { transform: translateX(calc(var(--scroll-y) * -0.2px)) scale(1) rotate(0deg); }
+  50% { transform: translateX(calc(var(--scroll-y) * -0.2px)) scale(1.03) rotate(1deg); }
+}
+
 .hero-dancer-right {
   width: 35vw; 
   height: 115vh;
@@ -228,6 +235,12 @@
   background-position: bottom left;
   /* Interactive Parallax: slides right on scroll but stays anchored vertically */
   transform: translateX(calc(var(--scroll-y) * 0.2px));
+  animation: breatheDancerRight 5.5s ease-in-out infinite 1s;
+}
+
+@keyframes breatheDancerRight {
+  0%, 100% { transform: translateX(calc(var(--scroll-y) * 0.2px)) scale(1) rotate(0deg); }
+  50% { transform: translateX(calc(var(--scroll-y) * 0.2px)) scale(1.02) rotate(-1deg); }
 }
 
 /* ==================================================
@@ -286,6 +299,11 @@
   display: flex;
   align-items: center;
   gap: 0.8rem;
+  animation: glowBadge 3s ease-in-out infinite;
+}
+@keyframes glowBadge {
+  0%, 100% { box-shadow: 0 0 10px rgba(255,215,0,0); }
+  50% { box-shadow: 0 0 20px rgba(255,215,0,0.4); }
 }
 .badge-icon {
   color: #B73568;
@@ -324,6 +342,11 @@
   letter-spacing: 0.02em;
   position: relative;
   z-index: 2;
+  animation: floatMain 5s ease-in-out infinite;
+}
+@keyframes floatMain {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-15px); }
 }
 
 .hero-title-secondary {
@@ -336,6 +359,11 @@
   transform: rotate(-3deg);
   text-shadow: 2px 2px 10px rgba(0,0,0,0.9), 0 0 15px rgba(233,77,120,0.3);
   z-index: 3;
+  animation: floatSecondary 4.5s ease-in-out infinite 0.5s;
+}
+@keyframes floatSecondary {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50% { transform: translateY(-10px) rotate(-1deg); }
 }
 
 /* Event Info */
@@ -548,5 +576,24 @@
   .luxury-badge {
     font-size: 0.5rem;
     padding: 0.3rem 0.8rem;
+  }
+  
+  /* Extreme Mobile Performance Optimizations */
+  .hero-cinematic-container, .scene-volume, .scene-layer {
+    perspective: none !important;
+    transform-style: flat !important;
+  }
+  
+  /* Disable hardware-crushing blurs and drop-shadows */
+  .bg-plate { filter: none !important; opacity: 0.6; }
+  .hero-dancer { filter: drop-shadow(0 10px 20px rgba(0,0,0,0.8)) !important; }
+  
+  /* Hide purely decorative background layers that clutter and lag mobile */
+  .layer-lanterns, 
+  .layer-particles, 
+  .layer-crowd-far, 
+  .layer-crowd-near, 
+  .fg-object {
+    display: none !important;
   }
 }

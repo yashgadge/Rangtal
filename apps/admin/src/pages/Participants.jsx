@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, limit, orderBy, doc, getDoc } from 'firebase/firestore';
+import { collection, query, getDocs, limit, orderBy, doc, getDoc, writeBatch, serverTimestamp, increment } from 'firebase/firestore';
 import { db } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
-import { Download, Trash2 } from 'lucide-react';
+import { Download, Trash2, CheckCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
@@ -20,6 +20,19 @@ export default function Participants() {
   const [previewParticipant, setPreviewParticipant] = useState(null);
   const [selectedRegistration, setSelectedRegistration] = useState(null);
   const [regLoading, setRegLoading] = useState(false);
+  const [selectedCheckin, setSelectedCheckin] = useState(null);
+
+  const { data: passes } = useFirebaseData('admin_passes_lookup', async () => {
+    const q = query(collection(db, 'passes'));
+    const snap = await getDocs(q);
+    return snap.docs.reduce((acc, doc) => {
+      const p = doc.data();
+      if (p.participantId) {
+        acc[p.participantId] = p;
+      }
+      return acc;
+    }, {});
+  });
 
   useEffect(() => {
     if (selectedParticipant?.registrationId) {
@@ -34,7 +47,26 @@ export default function Participants() {
     } else {
       setSelectedRegistration(null);
     }
-  }, [selectedParticipant]);
+
+    if (selectedParticipant?.id && passes?.[selectedParticipant.id]?.id) {
+      getDoc(doc(db, 'checkins', `pass_${passes[selectedParticipant.id].id}`))
+        .then(snap => {
+          if (snap.exists()) setSelectedCheckin(snap.data());
+          else setSelectedCheckin(null);
+        }).catch(console.error);
+    } else {
+      setSelectedCheckin(null);
+    }
+  }, [selectedParticipant, passes]);
+
+  const { data: colleges } = useFirebaseData('admin_colleges_lookup', async () => {
+    const q = query(collection(db, 'colleges'));
+    const snap = await getDocs(q);
+    return snap.docs.reduce((acc, doc) => {
+      acc[doc.id] = doc.data().name;
+      return acc;
+    }, {});
+  });
 
   const { data, loading, error, refresh } = useFirebaseData('admin_participants', async () => {
     const q = query(collection(db, 'participants'), limit(100));
@@ -56,9 +88,10 @@ export default function Participants() {
     return data.filter(p => 
       p.id.toLowerCase().includes(term) || 
       (p.fullName && p.fullName.toLowerCase().includes(term)) ||
-      (p.registrationId && p.registrationId.toLowerCase().includes(term))
+      (p.registrationId && p.registrationId.toLowerCase().includes(term)) ||
+      (passes?.[p.id]?.readableId && passes[p.id].readableId.toLowerCase().includes(term))
     );
-  }, [data, searchTerm]);
+  }, [data, searchTerm, passes]);
 
   function getBadgeColor(status) {
     if (status === 'VERIFIED') return 'badge-success';
@@ -84,15 +117,35 @@ export default function Participants() {
     }
   }
 
+  async function handleManualCheckin(e, participant, pass) {
+    e.stopPropagation();
+    if (!window.confirm(`Manually check in ${participant.fullName || 'this participant'}?`)) return;
+    const toastId = toast.loading('Checking in...');
+    try {
+      const checkInFn = httpsCallable(functions, 'checkInParticipantV2');
+      const res = await checkInFn({ secureCode: pass.secureCode || pass.id });
+      
+      if (res.data && res.data.success === false) {
+        throw new Error(res.data.status || 'Check-in failed');
+      }
+      
+      toast.update(toastId, 'success', 'Participant checked in manually');
+      refresh();
+    } catch (err) {
+      console.error(err);
+      toast.update(toastId, 'error', 'Error checking in', normalizeError(err));
+    }
+  }
+
   const columns = [
     { 
       header: "Participant", 
       accessorKey: "fullName", 
       sortKey: "fullName",
       cell: (r) => {
-        const name = r.fullName || r.custom_full_name || r.custom_name || 'Participant';
-        const phone = r.phoneNumber || r.custom_phone_number || r.custom_mobile || 'No phone';
-        const gender = r.gender || r.custom_gender || 'N/A';
+        const name = r.fullName || r.customFields?.full_name || r.customFields?.name || 'Participant';
+        const phone = r.mobile || r.phoneNumber || r.customFields?.phone_number || r.customFields?.mobile || r.customFields?.phone || 'No phone';
+        const gender = r.gender || r.customFields?.gender || 'N/A';
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <div className="avatar" style={{ width: '32px', height: '32px', fontSize: '0.8rem' }}>
@@ -106,24 +159,45 @@ export default function Participants() {
         );
       }
     },
-    { header: "Pass Type", accessorKey: "passType", sortKey: "passType", cell: (r) => <span className="badge badge-info">{r.passType || (r.isGroup ? 'Group' : 'Single')}</span> },
+    { header: "Pass ID", accessorKey: "passId", cell: (r) => <span style={{fontFamily: 'monospace', fontSize: '0.85rem'}}>{passes?.[r.id]?.readableId || 'N/A'}</span> },
     { header: "Linked Email", accessorKey: "email", sortKey: "email", cell: (r) => <span style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>{r.email || 'Legacy'}</span> },
-    { header: "College", accessorKey: "college", sortKey: "college" },
-    { header: "ID", accessorKey: "id", cell: (r) => <span style={{fontFamily: 'monospace', fontSize: '0.85rem'}}>{r.id.slice(0,8)}</span> },
-    { header: "Status", accessorKey: "verificationStatus", sortKey: "verificationStatus", cell: (r) => <span className={`badge ${getBadgeColor(r.verificationStatus)}`}>{r.verificationStatus || 'PENDING'}</span> },
-    { header: "Date", accessorKey: "createdAt", sortKey: (r) => r.createdAt?.toMillis ? r.createdAt.toMillis() : 0, cell: (r) => <span style={{fontSize: '0.85rem'}}>{r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : 'N/A'}</span> },
+    { header: "College", accessorKey: "collegeId", sortKey: "collegeId", cell: (r) => {
+      const cName = colleges ? (colleges[r.collegeId] || r.collegeId) : r.collegeId;
+      if (cName && cName.toLowerCase().includes('other')) {
+        return r.customFields?.other_college_name || r.customFields?.college_name || cName;
+      }
+      return cName || 'N/A';
+    }},
+    { header: "Verification", accessorKey: "verificationStatus", sortKey: "verificationStatus", cell: (r) => <span className={`badge ${getBadgeColor(r.verificationStatus)}`}>{r.verificationStatus || 'PENDING'}</span> },
+    { header: "Check-in", accessorKey: "checkInStatus", sortKey: "checkInStatus", cell: (r) => <span className={`badge ${r.checkInStatus === 'CHECKED_IN' ? 'badge-success' : 'badge-warning'}`}>{r.checkInStatus === 'CHECKED_IN' ? 'Checked In' : 'Pending'}</span> },
     {
       header: "Actions",
-      cell: (r) => (
-        <button 
-          onClick={(e) => handleDelete(e, r)}
-          className="btn btn-icon"
-          style={{ padding: '0.4rem', color: 'var(--color-error)', background: 'rgba(255,0,0,0.1)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-          title="Delete Registration"
-        >
-          <Trash2 size={16} />
-        </button>
-      )
+      cell: (r) => {
+        const isCheckedIn = r.checkInStatus === 'CHECKED_IN';
+        const pass = passes?.[r.id];
+        return (
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {!isCheckedIn && pass && (
+              <button 
+                onClick={(e) => handleManualCheckin(e, r, pass)}
+                className="btn btn-icon"
+                style={{ padding: '0.4rem', color: 'var(--color-success)', background: 'rgba(0,255,0,0.1)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                title="Manual Check-in"
+              >
+                <CheckCircle size={16} />
+              </button>
+            )}
+            <button 
+              onClick={(e) => handleDelete(e, r)}
+              className="btn btn-icon"
+              style={{ padding: '0.4rem', color: 'var(--color-error)', background: 'rgba(255,0,0,0.1)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+              title="Delete Registration"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        )
+      }
     }
   ];
 
@@ -132,6 +206,16 @@ export default function Participants() {
       <PageHeader 
         title="Participants" 
         description="Manage all registered participants." 
+        actions={
+          <button 
+            className="btn btn-secondary"
+            onClick={() => window.open('/print-participants', '_blank')}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            <Download size={18} />
+            Print ID Sheets
+          </button>
+        }
       />
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
@@ -218,6 +302,32 @@ export default function Participants() {
                   ))}
               </div>
             </div>
+
+            {selectedParticipant.checkInStatus === 'CHECKED_IN' && (
+              <div className="surface-flat" style={{ padding: '1.25rem' }}>
+                <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Check-in Details</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Status</div>
+                    <div><span className="badge badge-success">Checked In</span></div>
+                  </div>
+                  {selectedCheckin ? (
+                    <>
+                      <div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Check-in Time</div>
+                        <div>{selectedCheckin.timestamp?.toDate ? selectedCheckin.timestamp.toDate().toLocaleString() : 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Scanned By</div>
+                        <div>{selectedCheckin.volunteerId || 'Unknown'}</div>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)' }}>Loading details...</div>
+                  )}
+                </div>
+              </div>
+            )}
             
             <div className="surface-flat" style={{ padding: '1.25rem' }}>
               <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Verification Documents</h4>

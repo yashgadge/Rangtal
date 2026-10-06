@@ -10,12 +10,23 @@ import Home from './pages/Home.jsx';
 import Register from './pages/Register.jsx';
 import Account from './pages/Account.jsx';
 import PassViewer from './pages/PassViewer.jsx';
+import About from './pages/About.jsx';
 
 gsap.registerPlugin(ScrollTrigger);
 
 function App() {
   useEffect(() => {
-    // Initialize Lenis for smooth scrolling
+    // Prevent GSAP from recalculating on mobile URL bar show/hide which causes layout shifts
+    ScrollTrigger.config({ ignoreMobileResize: true });
+
+    // Only initialize Lenis smooth scrolling on desktop devices
+    const isMobile = window.matchMedia('(max-width: 768px)').matches || ('ontouchstart' in window);
+    
+    if (isMobile) {
+      return; // Use native scrolling on mobile to prevent animation jank
+    }
+
+    // Initialize Lenis for smooth scrolling (Desktop only)
     const lenis = new Lenis({
       duration: 1.2,
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), 
@@ -53,6 +64,7 @@ function App() {
       <Navigation />
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
         <Route path="/register" element={<Register />} />
         <Route path="/account" element={<Account />} />
         <Route path="/account/pass/:passId" element={<PassViewer />} />

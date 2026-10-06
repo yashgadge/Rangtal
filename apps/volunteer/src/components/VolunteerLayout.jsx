@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import './VolunteerLayout.css';
-import { ScanLine, LogOut } from 'lucide-react';
+import { ScanLine, LogOut, Users } from 'lucide-react';
 
 export default function VolunteerLayout() {
   const { user, volunteerData, logout } = useAuth();
@@ -15,18 +15,23 @@ export default function VolunteerLayout() {
       </main>
       
       <nav className="bottom-nav" style={{ 
-        display: 'flex', justifyContent: 'space-around', padding: '1rem', 
-        background: 'var(--bg-elevated)', borderTop: '1px solid rgba(255,255,255,0.05)',
-        zIndex: 50
+        display: 'flex', justifyContent: 'space-between', padding: '0.75rem 1rem 1.25rem 1rem', 
+        background: 'rgba(10, 10, 10, 0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid rgba(255,255,255,0.1)',
+        zIndex: 50, paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom))'
       }}>
-        <NavLink to="/scanner" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)', textDecoration: 'none' }}>
-          <ScanLine size={24} />
-          <span style={{ fontSize: '0.75rem' }}>Scan Pass</span>
+        <NavLink to="/scanner" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'} style={({isActive}) => ({ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', color: isActive ? 'var(--color-gold)' : 'var(--text-secondary)', textDecoration: 'none', flex: 1, fontFamily: 'sans-serif' })}>
+          <ScanLine size={24} style={{ display: 'block' }} />
+          <span style={{ fontSize: '0.85rem', fontWeight: 500, letterSpacing: '0.5px' }}>Scan Pass</span>
         </NavLink>
         
-        <button onClick={logout} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: 'var(--color-error)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
-          <LogOut size={24} />
-          <span style={{ fontSize: '0.75rem' }}>Sign Out</span>
+        <NavLink to="/participants" className={({isActive}) => isActive ? 'nav-item active' : 'nav-item'} style={({isActive}) => ({ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', color: isActive ? 'var(--color-gold)' : 'var(--text-secondary)', textDecoration: 'none', flex: 1, fontFamily: 'sans-serif' })}>
+          <Users size={24} style={{ display: 'block' }} />
+          <span style={{ fontSize: '0.85rem', fontWeight: 500, letterSpacing: '0.5px' }}>Participants</span>
+        </NavLink>
+        
+        <button onClick={logout} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px', color: 'var(--color-error)', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, flex: 1, fontFamily: 'sans-serif' }}>
+          <LogOut size={24} style={{ display: 'block' }} />
+          <span style={{ fontSize: '0.85rem', fontWeight: 500, letterSpacing: '0.5px' }}>Sign Out</span>
         </button>
       </nav>
     </div>

@@ -23,8 +23,8 @@ export const AuthProvider = ({ children }) => {
           
           const isMasterAdmin = firebaseUser.email === 'yashgadge11155@gmail.com';
           
-          if (!claims.admin && !claims.super_admin && !isMasterAdmin) {
-            // Not an admin. Reject.
+          if (!claims.admin && !claims.super_admin && !isMasterAdmin && !claims.volunteer) {
+            // Not an admin or volunteer. Reject.
             await signOut(auth);
             setUser(null);
             setRole(null);
@@ -35,15 +35,17 @@ export const AuthProvider = ({ children }) => {
           let data = null;
           
           if (!isMasterAdmin) {
-            // 2. Fetch admin profile to check active status
-            const adminDoc = await getDoc(doc(db, 'admins', firebaseUser.uid));
-            if (!adminDoc.exists()) {
+            // 2. Fetch admin profile (or volunteer profile) to check active status
+            const collectionName = claims.volunteer ? 'volunteers' : 'admins';
+            const userDoc = await getDoc(doc(db, collectionName, firebaseUser.uid));
+            
+            if (!userDoc.exists()) {
               await signOut(auth);
               setUser(null);
               setStatus('ERROR');
               return;
             }
-            data = adminDoc.data();
+            data = userDoc.data();
             
             if (data && data.status === 'DISABLED') {
               await signOut(auth);
@@ -53,7 +55,14 @@ export const AuthProvider = ({ children }) => {
             }
           }
 
-          setRole((claims.super_admin || isMasterAdmin) ? 'SUPER_ADMIN' : 'ADMIN');
+          if (claims.super_admin || isMasterAdmin) {
+            setRole('SUPER_ADMIN');
+          } else if (claims.admin) {
+            setRole('ADMIN');
+          } else if (claims.volunteer) {
+            setRole('VOLUNTEER');
+          }
+          
           setAdminData(data || { name: 'Master Admin', email: firebaseUser.email });
           setUser(firebaseUser);
           setStatus('AUTHENTICATED');

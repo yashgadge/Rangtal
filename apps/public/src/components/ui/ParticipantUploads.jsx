@@ -49,9 +49,9 @@ export default function ParticipantUploads({ participantIndex, participantName, 
   const atMaxCapacity = currentFiles.length >= maxFiles;
 
   return (
-    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '1rem' }}>
+    <div style={{ padding: '0 0.5rem', marginBottom: '1.5rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h3 style={{ fontSize: '0.95rem', fontWeight: 500, margin: 0, color: 'var(--color-ivory)' }}>{participantName}</h3>
+        <h3 style={{ fontSize: '0.8rem', fontWeight: 500, margin: 0, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.5px' }}>{participantName}</h3>
         <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>
           {currentFiles.length} / {maxFiles} Added
         </div>
@@ -83,7 +83,9 @@ export default function ParticipantUploads({ participantIndex, participantName, 
                     {file.name}
                   </span>
                   <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.5)' }}>
-                    {(file.size / (1024 * 1024)).toFixed(2)} MB
+                    {file.size < 1024 * 1024 
+                      ? `${(file.size / 1024).toFixed(1)} KB` 
+                      : `${(file.size / (1024 * 1024)).toFixed(2)} MB`}
                   </span>
                 </div>
 
@@ -106,22 +108,22 @@ export default function ParticipantUploads({ participantIndex, participantName, 
             onClick={() => setShowCamera(true)}
             style={{ 
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-              padding: '0.75rem', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px',
-              color: 'var(--color-ivory)', cursor: 'pointer', fontSize: '0.9rem', transition: 'all 0.2s'
+              padding: '0.85rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', borderBottom: '1px solid rgba(255,255,255,0.15)',
+              color: 'var(--color-ivory)', cursor: 'pointer', fontSize: '0.85rem', transition: 'all 0.3s', fontWeight: 300
             }}
-            onMouseOver={e => e.currentTarget.style.borderColor = 'rgba(212, 175, 55, 0.5)'}
-            onMouseOut={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'}
+            onMouseOver={e => { e.currentTarget.style.borderColor = 'rgba(212, 175, 55, 0.5)'; e.currentTarget.style.background = 'rgba(0,0,0,0.5)'; }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)'; e.currentTarget.style.borderBottom = '1px solid rgba(255,255,255,0.15)'; e.currentTarget.style.background = 'rgba(0,0,0,0.3)'; }}
           >
             <Camera size={18} /> Take Photo
           </button>
 
           <label style={{ 
               flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-              padding: '0.75rem', background: 'rgba(0,0,0,0.4)', border: '1px dashed rgba(255,255,255,0.2)', borderRadius: '8px',
-              color: 'var(--color-ivory)', cursor: 'pointer', fontSize: '0.9rem', transition: 'all 0.2s'
+              padding: '0.85rem', background: 'rgba(0,0,0,0.3)', border: '1px dashed rgba(255,255,255,0.15)', borderRadius: '8px',
+              color: 'var(--color-ivory)', cursor: 'pointer', fontSize: '0.85rem', transition: 'all 0.3s', fontWeight: 300
             }}
-            onMouseOver={e => e.currentTarget.style.borderColor = 'rgba(212, 175, 55, 0.5)'}
-            onMouseOut={e => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.2)'}
+            onMouseOver={e => { e.currentTarget.style.borderColor = 'rgba(212, 175, 55, 0.5)'; e.currentTarget.style.background = 'rgba(0,0,0,0.5)'; }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; e.currentTarget.style.background = 'rgba(0,0,0,0.3)'; }}
           >
             <Upload size={18} /> Upload File
             <input type="file" multiple={maxFiles > 1} onChange={handleFileChange} style={{ display: 'none' }} accept="image/*,.pdf" />

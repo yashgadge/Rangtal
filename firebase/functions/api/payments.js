@@ -43,13 +43,15 @@ exports.createPaymentOrder = onCall({ invoker: "public" }, async (request) => {
         throw new HttpsError("resource-exhausted", "Package is sold out");
       }
 
+      const actualPrice = (pkg.earlyBirdEnabled && (pkg.soldCount || 0) < (pkg.earlyBirdCapacity || 0)) ? pkg.earlyBirdPrice : pkg.price;
+
       // 1. Create order in Gateway
       let orderId;
       if (process.env.RZP_KEY && process.env.RZP_SECRET) {
         const Razorpay = require('razorpay');
         const rzp = new Razorpay({ key_id: process.env.RZP_KEY, key_secret: process.env.RZP_SECRET });
         const rzpOrder = await rzp.orders.create({
-          amount: pkg.price * 100, // amount in paise
+          amount: actualPrice * 100, // amount in paise
           currency: "INR",
           receipt: `receipt_${registrationId}`,
           notes: { registrationId }
@@ -67,7 +69,7 @@ exports.createPaymentOrder = onCall({ invoker: "public" }, async (request) => {
         gatewayOrderId: orderId,
         registrationId,
         uid,
-        amount: pkg.price,
+        amount: actualPrice,
         status: "CREATED",
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp()
@@ -81,7 +83,7 @@ exports.createPaymentOrder = onCall({ invoker: "public" }, async (request) => {
         updatedAt: FieldValue.serverTimestamp()
       });
 
-      return { orderId, amount: pkg.price, paymentId: paymentRef.id };
+      return { orderId, amount: actualPrice, paymentId: paymentRef.id };
     });
 
     await createAuditLog({

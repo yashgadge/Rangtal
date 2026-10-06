@@ -6,6 +6,7 @@ import VolunteerLayout from './components/VolunteerLayout';
 import NetworkIndicator from './components/NetworkIndicator';
 
 const Scanner = React.lazy(() => import('./pages/Scanner'));
+const Participants = React.lazy(() => import('./pages/Participants'));
 
 const ProtectedRoute = ({ children }) => {
   const { status } = useAuth();
@@ -45,6 +46,11 @@ function AppRoutes() {
         <Route path="scanner" element={
           <Suspense fallback={<PageLoader />}>
             <Scanner />
+          </Suspense>
+        } />
+        <Route path="participants" element={
+          <Suspense fallback={<PageLoader />}>
+            <Participants />
           </Suspense>
         } />
       </Route>

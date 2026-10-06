@@ -22,6 +22,37 @@ export default function EventInfo() {
     }
   };
 
+  const [settings, setSettings] = React.useState({
+    EVENT: { 
+      location: 'JSPM Cricket Ground\nWagholi, Pune',
+      timing: '7:00 PM to 12:00 AM\nDaily from 11 Oct to 19 Oct',
+      dressCode: 'Traditional Indian\nMandatory',
+      eventDate: '17 NOV 2026'
+    }
+  });
+
+  React.useEffect(() => {
+    import('firebase/firestore').then(({ doc, getDoc }) => {
+      import('../../firebase').then(({ db }) => {
+        getDoc(doc(db, 'eventSettings', 'global')).then(snap => {
+          if (snap.exists()) {
+            setSettings(prev => ({ ...prev, ...snap.data() }));
+          }
+        }).catch(err => console.error(err));
+      });
+    });
+  }, []);
+
+  const renderWithBr = (text) => {
+    if (!text) return null;
+    return text.split('\n').map((line, i) => (
+      <React.Fragment key={i}>
+        {line}
+        {i < text.split('\n').length - 1 && <br />}
+      </React.Fragment>
+    ));
+  };
+
   return (
     <section className="scene-container" id="info" style={{ padding: '2rem 2rem 6rem 2rem', position: 'relative', zIndex: 10 }}>
       <motion.div 
@@ -40,18 +71,31 @@ export default function EventInfo() {
         
         <div className="info-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '2rem' }}>
           <motion.div variants={itemVariants} className="info-item" style={{ background: 'linear-gradient(145deg, rgba(60,15,30,0.4), rgba(26,5,11,0.7))', backdropFilter: 'blur(20px)', padding: '2.5rem 2rem', borderRadius: '16px', border: '1px solid rgba(232,213,181,0.15)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
+            <h4 style={{ color: 'var(--color-gold)', fontSize: '1.2rem', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '2px' }}>Date</h4>
+            <p style={{ color: 'var(--color-ivory)', fontSize: '1.1rem', lineHeight: 1.6, opacity: 0.9 }}>
+              {renderWithBr(settings.EVENT?.eventDate)}
+            </p>
+          </motion.div>
+
+          <motion.div variants={itemVariants} className="info-item" style={{ background: 'linear-gradient(145deg, rgba(60,15,30,0.4), rgba(26,5,11,0.7))', backdropFilter: 'blur(20px)', padding: '2.5rem 2rem', borderRadius: '16px', border: '1px solid rgba(232,213,181,0.15)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
             <h4 style={{ color: 'var(--color-gold)', fontSize: '1.2rem', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '2px' }}>Venue</h4>
-            <p style={{ color: 'var(--color-ivory)', fontSize: '1.1rem', lineHeight: 1.6, opacity: 0.9 }}>JSPM Cricket Ground<br/>Wagholi, Pune</p>
+            <p style={{ color: 'var(--color-ivory)', fontSize: '1.1rem', lineHeight: 1.6, opacity: 0.9 }}>
+              {renderWithBr(settings.EVENT?.location)}
+            </p>
           </motion.div>
           
           <motion.div variants={itemVariants} className="info-item" style={{ background: 'linear-gradient(145deg, rgba(60,15,30,0.4), rgba(26,5,11,0.7))', backdropFilter: 'blur(20px)', padding: '2.5rem 2rem', borderRadius: '16px', border: '1px solid rgba(232,213,181,0.15)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
             <h4 style={{ color: 'var(--color-gold)', fontSize: '1.2rem', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '2px' }}>Timing</h4>
-            <p style={{ color: 'var(--color-ivory)', fontSize: '1.1rem', lineHeight: 1.6, opacity: 0.9 }}>7:00 PM to 12:00 AM<br/>Daily from 11 Oct to 19 Oct</p>
+            <p style={{ color: 'var(--color-ivory)', fontSize: '1.1rem', lineHeight: 1.6, opacity: 0.9 }}>
+              {renderWithBr(settings.EVENT?.timing)}
+            </p>
           </motion.div>
           
           <motion.div variants={itemVariants} className="info-item" style={{ background: 'linear-gradient(145deg, rgba(60,15,30,0.4), rgba(26,5,11,0.7))', backdropFilter: 'blur(20px)', padding: '2.5rem 2rem', borderRadius: '16px', border: '1px solid rgba(232,213,181,0.15)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
             <h4 style={{ color: 'var(--color-gold)', fontSize: '1.2rem', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '2px' }}>Dress Code</h4>
-            <p style={{ color: 'var(--color-ivory)', fontSize: '1.1rem', lineHeight: 1.6, opacity: 0.9 }}>Traditional Indian<br/>Mandatory</p>
+            <p style={{ color: 'var(--color-ivory)', fontSize: '1.1rem', lineHeight: 1.6, opacity: 0.9 }}>
+              {renderWithBr(settings.EVENT?.dressCode)}
+            </p>
           </motion.div>
         </div>
         
