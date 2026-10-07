@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { useNavigate, useParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
@@ -13,12 +13,13 @@ export default function PassViewer() {
   const [registration, setRegistration] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [user, setUser] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        fetchPass(user.uid);
+    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
       } else {
         navigate('/');
       }
@@ -26,43 +27,59 @@ export default function PassViewer() {
     return () => unsubscribe();
   }, [navigate, passId]);
 
-  async function fetchPass(uid) {
-    try {
-      setLoading(true);
-      
-      const passRef = doc(db, 'passes', passId);
-      const passSnap = await getDoc(passRef);
+  useEffect(() => {
+    if (!user) return;
+    setLoading(true);
+
+    const passRef = doc(db, 'passes', passId);
+    let unsubPart = null;
+    let unsubReg = null;
+
+    const unsubPass = onSnapshot(passRef, (passSnap) => {
       if (!passSnap.exists()) {
-        throw new Error("Pass not found");
+        setError("Pass not found");
+        setLoading(false);
+        return;
       }
       
       const passData = { id: passSnap.id, ...passSnap.data() };
-      if (passData.uid !== uid) {
-        throw new Error("Unauthorized access");
+      if (passData.uid !== user.uid) {
+        setError("Unauthorized access");
+        setLoading(false);
+        return;
       }
-      
-      if (passData.participantId && !passData.isGroup) {
-        const partSnap = await getDoc(doc(db, 'participants', passData.participantId));
-        if (partSnap.exists()) {
-          passData.participant = partSnap.data();
-        }
-      }
-      
-      setPass(passData);
 
-      const regRef = doc(db, 'registrations', passData.registrationId);
-      const regSnap = await getDoc(regRef);
-      if (regSnap.exists()) {
-        setRegistration(regSnap.data());
+      setPass(prev => ({ ...prev, ...passData }));
+
+      if (passData.participantId && !passData.isGroup && !unsubPart) {
+        unsubPart = onSnapshot(doc(db, 'participants', passData.participantId), (partSnap) => {
+          if (partSnap.exists()) {
+            setPass(prev => prev ? { ...prev, participant: partSnap.data() } : null);
+          }
+        });
       }
-      
-    } catch (err) {
+
+      if (passData.registrationId && !unsubReg) {
+        unsubReg = onSnapshot(doc(db, 'registrations', passData.registrationId), (regSnap) => {
+          if (regSnap.exists()) {
+            setRegistration(regSnap.data());
+          }
+        });
+      }
+
+      setLoading(false);
+    }, (err) => {
       console.error(err);
       setError(err.message || "Failed to load pass");
-    } finally {
       setLoading(false);
-    }
-  }
+    });
+
+    return () => {
+      unsubPass();
+      if (unsubPart) unsubPart();
+      if (unsubReg) unsubReg();
+    };
+  }, [user, passId]);
 
   if (loading) {
     return (
@@ -147,6 +164,7 @@ export default function PassViewer() {
               {/* Middle Section (QR) */}
               <div className="pass-middle" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', background: 'rgba(255,255,255,0.02)' }}>
                 <div className="qr-container" style={{ 
+                  position: 'relative',
                   background: 'white', padding: '1rem', borderRadius: '16px', 
                   boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
                   opacity: pass.status === 'ACTIVE' ? 1 : 0.2,
@@ -160,7 +178,15 @@ export default function PassViewer() {
                     level={"Q"}
                     includeMargin={false}
                   />
+                  {pass.participant?.checkInStatus === 'CHECKED_IN' && (
+                    <div style={{ position: 'absolute', inset: 0, borderRadius: 'inherit', background: 'rgba(10,10,10,0.85)', backdropFilter: 'blur(3px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: 'white' }}>
+                      <div style={{ fontSize: '2.5rem', color: '#4ade80' }}>✓</div>
+                      <div style={{ fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase' }}>Checked In</div>
+                      <div style={{ fontSize: '0.7rem', opacity: 0.7 }}>Pass already used</div>
+                    </div>
+                  )}
                 </div>
+
                 {pass.status === 'ACTIVE' ? (
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '1.5rem', textAlign: 'center', maxWidth: '250px', lineHeight: 1.5 }}>
                     Present this QR code at the entrance scanner.
@@ -191,6 +217,7 @@ export default function PassViewer() {
                     <div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Participant Name</div>
                       <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'white' }}>{pass.participant?.fullName || pass.participantName || 'Unknown'}</div>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>{pass.participant?.customFields?.college_name || pass.participant?.customFields?.custom_other_college_name || 'N/A'}</div>
                     </div>
                   )}
                   <div>
@@ -216,7 +243,7 @@ export default function PassViewer() {
 
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1.5rem', textAlign: 'center' }}>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '0.5rem' }}>Digital Pass ID</div>
-                  <div style={{ fontFamily: 'monospace', fontSize: '1.25rem', letterSpacing: '2px', color: 'rgba(255,255,255,0.8)' }}>{pass.id.slice(0,10)}...</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '1.25rem', letterSpacing: '2px', color: 'rgba(255,255,255,0.8)' }}>{pass.readableId || pass.id.slice(0,10)}</div>
                 </div>
               </div>
             </motion.div>

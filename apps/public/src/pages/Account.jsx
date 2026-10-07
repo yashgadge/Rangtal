@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { auth, db, functions } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
@@ -13,27 +13,61 @@ import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
 import GlassSurface from '../components/ui/GlassSurface.jsx';
 import './Account.css';
 
+// Shown on top of a pass QR only after the pass has actually been checked in.
+function CheckedInOverlay({ small = false }) {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, borderRadius: 'inherit', zIndex: 5,
+      background: 'rgba(26,5,11,0.82)', backdropFilter: 'blur(3px)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: small ? '0.25rem' : '0.5rem',
+      pointerEvents: 'none'
+    }}>
+      <CheckCircle2 size={small ? 28 : 48} color="#4ade80" />
+      <div style={{ color: '#FFF5E5', fontWeight: 700, letterSpacing: '3px', fontSize: small ? '0.7rem' : '1rem', textTransform: 'uppercase' }}>Checked In</div>
+      <div style={{ color: '#E8D5B5', opacity: 0.8, fontSize: small ? '0.55rem' : '0.7rem', letterSpacing: '1px' }}>Pass already used</div>
+    </div>
+  );
+}
+
+
 export default function Account() {
   const [user, setUser] = useState(auth.currentUser);
   const [selectedPass, setSelectedPass] = useState(null);
   const [downloading, setDownloading] = useState(false);
+  const [loadingPayment, setLoadingPayment] = useState(null);
   const navigate = useNavigate();
 
   const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    // Process redirect result before listening to onAuthStateChanged
-    import('firebase/auth').then(({ getAuth, getRedirectResult }) => {
-      getRedirectResult(auth).catch((error) => {
-        console.error("Error from getRedirectResult:", error);
-      });
-    });
+    let unmounted = false;
 
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+      if (unmounted) return;
       setUser(currentUser);
-      setAuthLoading(false);
+      if (currentUser) {
+        setAuthLoading(false);
+      }
     });
-    return () => unsubscribe();
+
+    import('firebase/auth').then(({ getRedirectResult }) => {
+      getRedirectResult(auth)
+        .then(() => {
+          if (!unmounted) setAuthLoading(false);
+        })
+        .catch((error) => {
+          console.warn("Could not get redirect result:", error);
+          if (!unmounted) setAuthLoading(false);
+        });
+    }).catch(e => {
+      console.warn("Failed to load firebase/auth module:", e);
+      if (!unmounted) setAuthLoading(false);
+    });
+
+    return () => {
+      unmounted = true;
+      unsubscribe();
+    };
   }, []);
 
   const handleLogin = async () => {
@@ -55,33 +89,72 @@ export default function Account() {
     }
   };
 
-  const { data: rawRegistrations, loading, error } = useFirebaseData(`account_regs_${user?.uid}`, async () => {
-    if (!user) return [];
-    
-    const regsSnap = await getDocs(query(collection(db, 'registrations'), where('uid', '==', user.uid)));
-    const regsData = regsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const [rawRegistrations, setRawRegistrations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-    const regs = await Promise.all(regsData.map(async (reg) => {
-      const partsSnap = await getDocs(query(collection(db, 'participants'), where('registrationId', '==', reg.id), where('uid', '==', user.uid)));
-      const passesSnap = await getDocs(query(collection(db, 'passes'), where('registrationId', '==', reg.id), where('uid', '==', user.uid)));
-      
-      return {
+  useEffect(() => {
+    if (!user) {
+      setRawRegistrations([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    let unsubRegs, unsubParts, unsubPasses;
+    let regs = [], parts = [], passes = [];
+
+    const buildData = () => {
+      const built = regs.map(reg => ({
         ...reg,
-        participants: partsSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-        passes: passesSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-      };
-    }));
+        participants: parts.filter(p => p.registrationId === reg.id),
+        passes: passes.filter(p => p.registrationId === reg.id)
+      }));
+      built.sort((a, b) => {
+        const t1 = a.createdAt?.toMillis() || 0;
+        const t2 = b.createdAt?.toMillis() || 0;
+        return t2 - t1;
+      });
+      setRawRegistrations(built);
+      setLoading(false);
+    };
 
-    regs.sort((a, b) => {
-      const t1 = a.createdAt?.toMillis() || 0;
-      const t2 = b.createdAt?.toMillis() || 0;
-      return t2 - t1;
+    unsubRegs = onSnapshot(query(collection(db, 'registrations'), where('uid', '==', user.uid)), (snap) => {
+      regs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      buildData();
+    }, (err) => { console.error(err); setError(err.message); });
+
+    unsubParts = onSnapshot(query(collection(db, 'participants'), where('uid', '==', user.uid)), (snap) => {
+      parts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      buildData();
     });
 
-    return regs;
-  }, { enabled: !!user });
+    unsubPasses = onSnapshot(query(collection(db, 'passes'), where('uid', '==', user.uid)), (snap) => {
+      passes = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      buildData();
+    });
+
+    return () => {
+      if (unsubRegs) unsubRegs();
+      if (unsubParts) unsubParts();
+      if (unsubPasses) unsubPasses();
+    };
+  }, [user]);
+
+  const { data: collegesData } = useFirebaseData(`colleges_all`, async () => {
+    const snap = await getDocs(query(collection(db, 'colleges')));
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  });
 
   const registrations = rawRegistrations || [];
+
+  const getCollegeName = (collegeId, participants) => {
+    if (collegeId === 'OTHER' && participants && participants.length > 0 && participants[0].custom_other_college_name) {
+      return participants[0].custom_other_college_name;
+    }
+    const found = collegesData?.find(c => c.id === collegeId);
+    return found ? found.name : collegeId;
+  };
 
   const handlePayment = async (reg) => {
     try {
@@ -122,6 +195,27 @@ export default function Account() {
     } catch (err) {
       console.error("Order creation failed", err);
       alert("Could not initiate payment: " + err.message);
+    } finally {
+      setLoadingPayment(null);
+    }
+  };
+
+  const handleVerifyPayment = async (reg) => {
+    try {
+      setLoadingPayment(reg.id);
+      const syncPaymentStatus = httpsCallable(functions, 'syncPaymentStatus');
+      const response = await syncPaymentStatus({ registrationId: reg.id });
+      
+      if (response.data.success) {
+        alert("Payment verified successfully! Your pass will be issued shortly.");
+      } else {
+        alert("No completed payment found. Please try paying again.");
+      }
+    } catch (err) {
+      console.error("Verification failed", err);
+      alert("Verification failed: " + err.message);
+    } finally {
+      setLoadingPayment(null);
     }
   };
 
@@ -139,11 +233,13 @@ export default function Account() {
       const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#0a0a0a' });
       const imgData = canvas.toDataURL('image/jpeg', 1.0);
       
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdf = new jsPDF({
+        orientation: canvas.width > canvas.height ? 'l' : 'p',
+        unit: 'px',
+        format: [canvas.width, canvas.height]
+      });
       
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
       pdf.save(`Rangtal_Pass_${passId.slice(0,6)}.pdf`);
     } catch (err) {
       console.error(err);
@@ -156,9 +252,7 @@ export default function Account() {
   const downloadAllPassesPDF = async (passes) => {
     setDownloading(true);
     try {
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      
+      let pdf;
       for (let i = 0; i < passes.length; i++) {
         const pass = passes[i];
         const element = document.getElementById(`pass-render-${pass.id}`);
@@ -166,13 +260,20 @@ export default function Account() {
 
         const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#0a0a0a' });
         const imgData = canvas.toDataURL('image/jpeg', 1.0);
-        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
         
-        if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+        if (i === 0) {
+          pdf = new jsPDF({
+            orientation: canvas.width > canvas.height ? 'l' : 'p',
+            unit: 'px',
+            format: [canvas.width, canvas.height]
+          });
+        } else {
+          pdf.addPage([canvas.width, canvas.height], canvas.width > canvas.height ? 'l' : 'p');
+        }
+        pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
       }
       
-      pdf.save(`Rangtal_All_Passes.pdf`);
+      if (pdf) pdf.save(`Rangtal_All_Passes.pdf`);
     } catch (err) {
       console.error(err);
       alert("Failed to download PDFs.");
@@ -189,11 +290,13 @@ export default function Account() {
       const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#0a0a0a' });
       const imgData = canvas.toDataURL('image/jpeg', 1.0);
       
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdf = new jsPDF({
+        orientation: canvas.width > canvas.height ? 'l' : 'p',
+        unit: 'px',
+        format: [canvas.width, canvas.height]
+      });
       
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
       
       // Convert PDF to Blob
       const pdfBlob = pdf.output('blob');
@@ -222,7 +325,7 @@ export default function Account() {
     return (
       <div className="account-page app-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <motion.div animate={{ opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 1.5 }} style={{ color: 'var(--color-gold)', fontFamily: 'var(--font-heading)', fontSize: '2rem', letterSpacing: '4px' }}>
-          RANGTAL
+          RANGTAAL
         </motion.div>
       </div>
     );
@@ -245,11 +348,21 @@ export default function Account() {
   }
 
   const allPasses = registrations?.reduce((acc, r) => {
-    const passes = r.passes?.map(p => ({
-      ...p,
-      regType: r.type,
-      participantName: p.isGroup ? `Group of ${p.participantCount}` : (r.participants?.find(part => part.id === p.participantId)?.fullName || 'Participant')
-    })) || [];
+    const passes = r.passes?.map(p => {
+      const regParts = r.participants || [];
+      const relevant = p.isGroup ? regParts : regParts.filter(part => part.id === p.participantId);
+      const checkedInCount = relevant.filter(part => part.checkInStatus === 'CHECKED_IN').length;
+      const checkedIn = relevant.length > 0 && checkedInCount === relevant.length;
+      return {
+        ...p,
+        regType: r.packageName || r.type,
+        collegeName: getCollegeName(r.collegeId, r.participants),
+        checkedIn,
+        checkedInCount,
+        totalMembers: relevant.length,
+        participantName: p.isGroup ? `Group of ${p.participantCount}` : (regParts.find(part => part.id === p.participantId)?.fullName || 'Participant')
+      };
+    }) || [];
     return acc.concat(passes);
   }, []) || [];
 
@@ -266,21 +379,21 @@ export default function Account() {
         </div>
       </div>
 
-      <div className="content-layer" style={{ position: 'relative', zIndex: 10, paddingTop: '120px', paddingBottom: '80px', minHeight: '100vh' }}>
+      <div className="content-layer" style={{ position: 'relative', zIndex: 10, paddingTop: '80px', paddingBottom: '80px', minHeight: '100vh' }}>
         <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '0 2rem' }}>
           
           {/* Header */}
-          <div className="account-header-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '3rem', borderBottom: '1px solid rgba(232,213,181,0.1)', paddingBottom: '2rem' }}>
+          <div className="account-header-top" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '1.5rem', borderBottom: '1px solid rgba(232,213,181,0.1)', paddingBottom: '1rem' }}>
             <div>
               <h1 style={{ fontFamily: '"Playfair Display", serif', fontSize: '3rem', fontWeight: 700, margin: 0, background: 'linear-gradient(to bottom, #FFF5E5 30%, #E8D5B5 80%, #B73568 150%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '0.02em' }}>My Dashboard</h1>
               <div style={{ fontFamily: 'var(--font-body)', color: '#E8D5B5', marginTop: '0.5rem', letterSpacing: '2px', fontSize: '0.8rem', textTransform: 'uppercase', opacity: 0.8, wordBreak: 'break-all' }}>{user.email}</div>
             </div>
             <div className="header-actions" style={{ display: 'flex', gap: '1rem' }}>
-              <GlassSurface width={160} height={40} borderRadius={8} blur={8} opacity={0.5} borderWidth={0.1} backgroundOpacity={0.1}>
-                <button onClick={() => navigate('/register')} style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', color: '#FFF5E5', fontFamily: 'var(--font-body)', fontSize: '0.75rem', letterSpacing: '1px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+              <div style={{ width: '160px', height: '40px' }}>
+                <button onClick={() => navigate('/register')} style={{ width: '100%', height: '100%', background: 'linear-gradient(90deg, #D23200, #B73568)', border: 'none', borderRadius: '8px', color: '#FFF5E5', fontFamily: 'var(--font-body)', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', boxShadow: '0 4px 15px rgba(210, 50, 0, 0.4)' }}>
                   BUY PASSES <ChevronRight size={14} />
                 </button>
-              </GlassSurface>
+              </div>
               <GlassSurface width={120} height={40} borderRadius={8} blur={8} opacity={0.3} borderWidth={0.1} backgroundOpacity={0.05}>
                 <button onClick={handleLogout} style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', color: '#E8D5B5', fontFamily: 'var(--font-body)', fontSize: '0.75rem', letterSpacing: '1px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', opacity: 0.8 }}>
                   <LogOut size={14} /> LOGOUT
@@ -290,7 +403,7 @@ export default function Account() {
           </div>
 
           {/* Navigation Tabs */}
-          <div className="account-tabs" style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid rgba(232,213,181,0.05)', marginBottom: '3rem', overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '0.5rem' }}>
+          <div className="account-tabs" style={{ display: 'flex', gap: '2rem', borderBottom: '1px solid rgba(232,213,181,0.05)', marginBottom: '1.5rem', overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '0.5rem' }}>
             <button 
               onClick={() => setActiveTab('passes')}
               style={{ 
@@ -343,11 +456,17 @@ export default function Account() {
                             boxShadow: '0 10px 30px -10px rgba(0, 0, 0, 0.5)'
                           }}
                         >
-                          <div className="qr-wrapper" style={{ background: '#FFF5E5', padding: '0.75rem', borderRadius: '12px', display: 'inline-block', marginBottom: '1rem', boxShadow: '0 0 20px rgba(255,245,229,0.1)' }}>
+                          <div className="qr-wrapper" style={{ position: 'relative', background: '#FFF5E5', padding: '0.75rem', borderRadius: '12px', display: 'inline-block', marginBottom: '1rem', boxShadow: '0 0 20px rgba(255,245,229,0.1)' }}>
                             <QRCodeSVG value={pass.secureCode} size={140} bgColor={"#FFF5E5"} fgColor={"#1A050B"} level={"Q"} />
+                            {pass.checkedIn && <CheckedInOverlay small />}
                           </div>
+                          {!pass.checkedIn && pass.isGroup && pass.checkedInCount > 0 && (
+                            <div style={{ fontSize: '0.65rem', color: '#D4AF37', marginBottom: '0.5rem', letterSpacing: '1px' }}>{pass.checkedInCount}/{pass.totalMembers} CHECKED IN</div>
+                          )}
                           <div className="participant-name" style={{ fontSize: '1.1rem', color: '#FFF5E5', fontFamily: '"Playfair Display", serif', fontWeight: 600, letterSpacing: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pass.participantName}</div>
                           <div style={{ fontSize: '0.65rem', color: '#E8D5B5', marginTop: '0.25rem', textTransform: 'uppercase', letterSpacing: '2px', opacity: 0.8 }}>{pass.regType} PASS</div>
+                          <div style={{ fontSize: '0.8rem', color: '#D4AF37', marginTop: '0.5rem', fontFamily: 'monospace', letterSpacing: '1px' }}>{pass.readableId || pass.id.slice(0,8).toUpperCase()}</div>
+                          {pass.collegeName && <div style={{ fontSize: '0.65rem', color: '#E8D5B5', marginTop: '0.25rem', opacity: 0.7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pass.collegeName}</div>}
                           
                           <div style={{ marginTop: '1rem', borderTop: '1px solid rgba(232,213,181,0.1)', paddingTop: '1rem', display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
                             <button onClick={(e) => { e.stopPropagation(); sharePassPDF(pass.id); }} style={{ padding: '0.4rem 0.8rem', background: 'rgba(232,213,181,0.1)', border: '1px solid rgba(232,213,181,0.2)', color: '#E8D5B5', borderRadius: '4px', fontSize: '0.65rem', letterSpacing: '1px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', transition: 'background 0.2s' }}>
@@ -358,22 +477,43 @@ export default function Account() {
 
                         {/* Hidden Render Element for PDF Generation */}
                         <div style={{ position: 'absolute', top: '-9999px', left: '-9999px' }}>
-                          <div id={`pass-render-${pass.id}`} style={{ width: '450px', background: '#0a0a0a', padding: '2rem', color: 'white' }}>
-                            <div style={{ textAlign: 'center', borderBottom: '2px dashed #333', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
-                              <h2 style={{ fontSize: '2rem', color: '#D4AF37', margin: 0 }}>RANGTAL</h2>
-                              <div style={{ fontSize: '0.8rem', letterSpacing: '4px', color: '#888' }}>2026</div>
+                          <div id={`pass-render-${pass.id}`} style={{ width: '450px', background: '#1A050B', padding: '2.5rem', color: '#FFF5E5', borderRadius: '24px', border: '2px solid #D4AF37', position: 'relative', overflow: 'hidden' }}>
+                            {/* Decorative Background Elements */}
+                            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '8px', background: 'linear-gradient(90deg, #B73568, #D4AF37, #B73568)' }} />
+                            <div style={{ position: 'absolute', top: '-50px', right: '-50px', width: '150px', height: '150px', borderRadius: '50%', border: '2px dashed rgba(212, 175, 55, 0.2)', opacity: 0.5 }} />
+                            <div style={{ position: 'absolute', bottom: '-50px', left: '-50px', width: '150px', height: '150px', borderRadius: '50%', border: '2px dashed rgba(212, 175, 55, 0.2)', opacity: 0.5 }} />
+
+                            <div style={{ textAlign: 'center', borderBottom: '1px solid rgba(212, 175, 55, 0.3)', paddingBottom: '1.5rem', marginBottom: '2rem', position: 'relative', zIndex: 1 }}>
+                              <h2 style={{ fontSize: '2.5rem', color: '#D4AF37', margin: '0 0 0.5rem 0', fontFamily: '"Playfair Display", serif', letterSpacing: '4px', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>RANGTAAL</h2>
+                              <div style={{ fontSize: '0.8rem', letterSpacing: '3px', color: '#E8D5B5', textTransform: 'uppercase', marginBottom: '0.5rem', opacity: 0.9 }}>by Rhythm Rebels</div>
+                              <div style={{ fontSize: '0.9rem', letterSpacing: '6px', color: '#B73568', fontWeight: 'bold' }}>2026</div>
                             </div>
-                            <div style={{ background: 'white', padding: '1rem', display: 'inline-block', borderRadius: '12px', margin: '0 auto 1.5rem' }}>
-                              <QRCodeSVG value={pass.secureCode} size={200} bgColor={"#ffffff"} fgColor={"#000000"} />
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', textAlign: 'left', marginBottom: '1.5rem' }}>
-                              <div>
-                                <div style={{ fontSize: '0.7rem', color: '#888', textTransform: 'uppercase' }}>Participant</div>
-                                <div style={{ fontSize: '1.1rem' }}>{pass.participantName}</div>
+
+                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2.5rem', position: 'relative', zIndex: 1 }}>
+                              <div style={{ position: 'relative', background: '#FFF5E5', padding: '1.25rem', borderRadius: '16px', display: 'inline-flex', boxShadow: '0 8px 32px rgba(212, 175, 55, 0.15)', border: '1px solid rgba(212, 175, 55, 0.5)' }}>
+                                <QRCodeSVG value={pass.secureCode} size={220} bgColor={"#FFF5E5"} fgColor={"#1A050B"} level={"H"} />
+                                {pass.checkedIn && <CheckedInOverlay />}
                               </div>
-                              <div>
-                                <div style={{ fontSize: '0.7rem', color: '#888', textTransform: 'uppercase' }}>Pass Type</div>
-                                <div style={{ fontSize: '1.1rem' }}>{pass.regType}</div>
+                            </div>
+
+                            <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '1.5rem', borderRadius: '12px', border: '1px solid rgba(212, 175, 55, 0.15)', position: 'relative', zIndex: 1 }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', textAlign: 'left' }}>
+                                <div>
+                                  <div style={{ fontSize: '0.75rem', color: '#E8D5B5', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '0.25rem', opacity: 0.7 }}>Participant</div>
+                                  <div style={{ fontSize: '1.25rem', fontFamily: '"Playfair Display", serif', color: '#FFF5E5', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pass.participantName}</div>
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: '0.75rem', color: '#E8D5B5', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '0.25rem', opacity: 0.7 }}>Pass Type</div>
+                                  <div style={{ fontSize: '1.25rem', fontFamily: '"Playfair Display", serif', color: '#FFF5E5', fontWeight: 600 }}>{pass.regType}</div>
+                                </div>
+                              </div>
+                              <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px dashed rgba(212, 175, 55, 0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                  <div style={{ fontSize: '0.65rem', color: '#E8D5B5', textTransform: 'uppercase', letterSpacing: '1px', opacity: 0.5 }}>Pass ID</div>
+                                  <div style={{ fontSize: '0.85rem', color: '#D4AF37', fontFamily: 'monospace', letterSpacing: '1px' }}>{pass.readableId || pass.id.slice(0,8).toUpperCase()}</div>
+                                  {pass.collegeName && <div style={{ fontSize: '0.7rem', color: '#E8D5B5', marginTop: '0.25rem', opacity: 0.8 }}>{pass.collegeName}</div>}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#B73568', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 'bold' }}>ENTRY VALID</div>
                               </div>
                             </div>
                           </div>
@@ -383,16 +523,18 @@ export default function Account() {
                   </div>
                 </>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '6rem 2rem', background: 'rgba(20, 5, 10, 0.6)', backdropFilter: 'blur(16px)', border: '1px dashed rgba(232,213,181,0.2)', borderRadius: '24px' }}>
-                  <Ticket size={48} color="#E8D5B5" style={{ opacity: 0.3, marginBottom: '1.5rem' }} />
-                  <h2 style={{ fontFamily: '"Playfair Display", serif', fontSize: '2rem', color: '#FFF5E5', margin: '0 0 1rem 0' }}>The Celebration Awaits</h2>
-                  <p style={{ fontFamily: 'var(--font-body)', color: 'rgba(232,213,181,0.7)', letterSpacing: '1px', marginBottom: '2.5rem', textAlign: 'center', maxWidth: '400px' }}>You haven't secured your digital passes for Rangtal Garba Night yet.</p>
-                  
-                  <GlassSurface width={250} height={50} borderRadius={8} blur={10} opacity={0.8} borderWidth={0.1} backgroundOpacity={0.2}>
-                    <button onClick={() => navigate('/register')} style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', color: '#FFF5E5', fontFamily: 'var(--font-body)', fontSize: '0.9rem', letterSpacing: '2px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem 1.5rem', background: 'rgba(20, 5, 10, 0.6)', backdropFilter: 'blur(16px)', border: '1px dashed rgba(232,213,181,0.2)', borderRadius: '24px', marginTop: '1rem' }}>
+                  <div style={{ marginBottom: '2.5rem', width: '100%', maxWidth: '280px' }}>
+                    <button onClick={() => navigate('/register')} style={{ width: '100%', height: '50px', background: 'linear-gradient(90deg, #D23200, #B73568)', border: 'none', borderRadius: '8px', color: '#FFF5E5', fontFamily: 'var(--font-body)', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', boxShadow: '0 4px 15px rgba(210, 50, 0, 0.4)', transition: 'transform 0.2s' }}>
                       BOOK YOUR PASS <ChevronRight size={16} />
                     </button>
-                  </GlassSurface>
+                  </div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.6 }}>
+                    <Ticket size={32} color="#E8D5B5" style={{ marginBottom: '1rem' }} />
+                    <h2 style={{ fontFamily: '"Playfair Display", serif', fontSize: '1.5rem', color: '#FFF5E5', margin: '0 0 0.5rem 0', textAlign: 'center' }}>The Celebration Awaits</h2>
+                    <p style={{ fontFamily: 'var(--font-body)', color: '#E8D5B5', letterSpacing: '1px', marginBottom: 0, textAlign: 'center', maxWidth: '300px', fontSize: '0.85rem', lineHeight: '1.5' }}>You haven't secured your digital passes for Rangtal Garba Night yet.</p>
+                  </div>
                 </div>
               )}
             </div>
@@ -405,16 +547,18 @@ export default function Account() {
                 <h2 style={{ fontSize: '1.5rem', color: '#FFF5E5', margin: 0, fontFamily: '"Playfair Display", serif', letterSpacing: '0.05em' }}>Order History</h2>
               </div>
               {registrations.length === 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '6rem 2rem', background: 'rgba(20, 5, 10, 0.6)', backdropFilter: 'blur(16px)', border: '1px dashed rgba(232,213,181,0.2)', borderRadius: '24px' }}>
-                  <Clock size={48} color="#E8D5B5" style={{ opacity: 0.3, marginBottom: '1.5rem' }} />
-                  <h2 style={{ fontFamily: '"Playfair Display", serif', fontSize: '2rem', color: '#FFF5E5', margin: '0 0 1rem 0' }}>No History Found</h2>
-                  <p style={{ fontFamily: 'var(--font-body)', color: 'rgba(232,213,181,0.7)', letterSpacing: '1px', marginBottom: '2.5rem', textAlign: 'center', maxWidth: '400px' }}>Your registration history is currently empty.</p>
-                  
-                  <GlassSurface width={250} height={50} borderRadius={8} blur={10} opacity={0.8} borderWidth={0.1} backgroundOpacity={0.2}>
-                    <button onClick={() => navigate('/register')} style={{ width: '100%', height: '100%', background: 'transparent', border: 'none', color: '#FFF5E5', fontFamily: 'var(--font-body)', fontSize: '0.9rem', letterSpacing: '2px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                      START EXPLORING
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem 1.5rem', background: 'rgba(20, 5, 10, 0.6)', backdropFilter: 'blur(16px)', border: '1px dashed rgba(232,213,181,0.2)', borderRadius: '24px' }}>
+                  <div style={{ marginBottom: '2.5rem', width: '100%', maxWidth: '280px' }}>
+                    <button onClick={() => navigate('/register')} style={{ width: '100%', height: '50px', background: 'linear-gradient(90deg, #D23200, #B73568)', border: 'none', borderRadius: '8px', color: '#FFF5E5', fontFamily: 'var(--font-body)', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', boxShadow: '0 4px 15px rgba(210, 50, 0, 0.4)', transition: 'transform 0.2s' }}>
+                      START EXPLORING <ChevronRight size={16} />
                     </button>
-                  </GlassSurface>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.6 }}>
+                    <Clock size={32} color="#E8D5B5" style={{ marginBottom: '1rem' }} />
+                    <h2 style={{ fontFamily: '"Playfair Display", serif', fontSize: '1.5rem', color: '#FFF5E5', margin: '0 0 0.5rem 0', textAlign: 'center' }}>No History Found</h2>
+                    <p style={{ fontFamily: 'var(--font-body)', color: '#E8D5B5', letterSpacing: '1px', marginBottom: 0, textAlign: 'center', maxWidth: '300px', fontSize: '0.85rem', lineHeight: '1.5' }}>Your registration history is currently empty.</p>
+                  </div>
                 </div>
               ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -430,6 +574,7 @@ export default function Account() {
                     <div>
                       <h2 style={{ fontSize: '1.5rem', margin: 0, color: 'var(--color-gold)' }}>{reg.type === 'COUPLE' ? 'Couple Pass' : 'Single Pass'}</h2>
                       <div style={{ fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>ID: {reg.id}</div>
+                      {reg.collegeId && <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>College: {getCollegeName(reg.collegeId, reg.participants)}</div>}
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Amount</div>
@@ -532,9 +677,14 @@ export default function Account() {
                           <div style={{ textAlign: 'center', padding: '2rem', background: 'rgba(255,255,255,0.03)', borderRadius: '16px' }}>
                             <h3 style={{ fontSize: '1.5rem', color: 'white', marginBottom: '0.5rem' }}>Complete Payment</h3>
                             <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>Your registration is reserved. Please complete your payment to receive your digital pass.</p>
-                            <button className="btn-primary" onClick={() => handlePayment(reg)} style={{ margin: '0 auto' }}>
-                              Pay ₹{reg.amount} Now
-                            </button>
+                            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                              <button className="btn-primary" onClick={() => handlePayment(reg)} disabled={loadingPayment === reg.id}>
+                                {loadingPayment === reg.id ? 'Processing...' : `Pay ₹${reg.amount} Now`}
+                              </button>
+                              <button className="btn-secondary" onClick={() => handleVerifyPayment(reg)} disabled={loadingPayment === reg.id}>
+                                Verify Pending Payment
+                              </button>
+                            </div>
                           </div>
                         )
                       )}
@@ -587,8 +737,9 @@ export default function Account() {
             <h2 style={{ fontFamily: '"Playfair Display", serif', fontSize: '2.5rem', margin: '0 0 0.5rem 0', background: 'linear-gradient(to bottom, #FFF5E5 30%, #E8D5B5 80%, #B73568 150%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>RANGTAL</h2>
             <div style={{ fontSize: '0.7rem', letterSpacing: '4px', color: 'rgba(232,213,181,0.6)', marginBottom: '2rem', fontFamily: 'var(--font-body)', textTransform: 'uppercase' }}>JSPM University</div>
             
-            <div style={{ background: '#FFF5E5', padding: '1rem', borderRadius: '16px', display: 'inline-block', marginBottom: '2.5rem', boxShadow: '0 0 30px rgba(232,213,181,0.15)' }}>
+            <div style={{ position: 'relative', background: '#FFF5E5', padding: '1rem', borderRadius: '16px', display: 'inline-block', marginBottom: '2.5rem', boxShadow: '0 0 30px rgba(232,213,181,0.15)' }}>
               <QRCodeSVG value={selectedPass.secureCode} size={220} bgColor={"#FFF5E5"} fgColor={"#1A050B"} level={"Q"} />
+              {selectedPass.checkedIn && <CheckedInOverlay />}
             </div>
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', textAlign: 'left', borderTop: '1px solid rgba(232,213,181,0.1)', paddingTop: '1.5rem', marginBottom: '2rem' }}>
@@ -599,6 +750,14 @@ export default function Account() {
               <div>
                 <div style={{ fontSize: '0.7rem', color: 'rgba(232,213,181,0.6)', textTransform: 'uppercase', letterSpacing: '1px' }}>Pass Type</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 600, color: '#FFF5E5', fontFamily: '"Playfair Display", serif', marginTop: '0.25rem' }}>{selectedPass.regType}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'rgba(232,213,181,0.6)', textTransform: 'uppercase', letterSpacing: '1px' }}>Pass ID</div>
+                <div style={{ fontSize: '1rem', fontWeight: 600, color: '#D4AF37', fontFamily: 'monospace', marginTop: '0.25rem' }}>{selectedPass.readableId || selectedPass.id.slice(0,8).toUpperCase()}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'rgba(232,213,181,0.6)', textTransform: 'uppercase', letterSpacing: '1px' }}>College</div>
+                <div style={{ fontSize: '0.9rem', color: '#FFF5E5', marginTop: '0.25rem' }}>{selectedPass.collegeName || 'N/A'}</div>
               </div>
             </div>
 

@@ -51,7 +51,7 @@ export default function Participants() {
     
     const toastId = toast.loading('Checking in...');
     try {
-      const checkInFn = httpsCallable(functions, 'checkInParticipant');
+      const checkInFn = httpsCallable(functions, 'checkInParticipantV2');
       const res = await checkInFn({ secureCode: pass.secureCode || pass.id });
       
       if (res.data && res.data.success === false) {
@@ -112,7 +112,7 @@ export default function Participants() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
                     <div>Pass ID: <span style={{ fontFamily: 'monospace', color: 'white' }}>{pass.id || pass.readableId || 'N/A'}</span></div>
                     <div>Email: {p.email || 'N/A'}</div>
-                    <div>Phone: {p.mobile || p.customFields?.phone_number || 'N/A'}</div>
+                    <div>Phone: {p.mobile || p.customFields?.phone_number || p.customFields?.phone || p.customFields?.mobile || 'N/A'}</div>
                     <div>Verification: {p.verificationStatus || 'PENDING'}</div>
                   </div>
                   

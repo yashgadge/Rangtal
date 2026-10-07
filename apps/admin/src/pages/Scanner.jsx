@@ -19,6 +19,16 @@ export default function Scanner() {
   
   const scannerRef = useRef(null);
   const html5QrCode = useRef(null);
+  const [cameraError, setCameraError] = useState(null);
+
+  const { data: collegesData } = useFirebaseData('adm_scanner_colleges', async () => {
+    const snap = await getDocs(query(collection(db, 'colleges')));
+    return snap.docs.reduce((acc, d) => { acc[d.id] = d.data().name; return acc; }, {});
+  });
+  const resolveCollege = (collegeId) => {
+    if (!collegeId || collegeId === 'N/A') return 'N/A';
+    return (collegesData && collegesData[collegeId]) || collegeId;
+  };
 
   const isDataLoading = false;
 
@@ -49,17 +59,31 @@ export default function Scanner() {
 
     if (!html5QrCode.current) {
       html5QrCode.current = new Html5Qrcode(scannerRef.current.id);
-      html5QrCode.current.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
-          if (handleScanRef.current) handleScanRef.current(decodedText);
-        },
-        (err) => {}
-      ).catch(err => {
-        console.error("Error starting scanner", err);
-        toast.error("Camera Error", "Could not start camera. Please ensure permissions are granted.");
-      });
+      const onDecode = (decodedText) => {
+        if (handleScanRef.current) handleScanRef.current(decodedText);
+      };
+      const cfg = { fps: 10, qrbox: { width: 250, height: 250 } };
+      const explain = (err) => {
+        const n = err?.name || '';
+        if (n === 'NotAllowedError' || /permission/i.test(String(err))) return 'Camera permission denied. Click the camera icon in the address bar, allow access, then reload.';
+        if (n === 'NotFoundError') return 'No camera found on this device.';
+        if (n === 'NotReadableError') return 'Camera is in use by another app (Teams/Zoom/other tab). Close it and reload.';
+        return String(err?.message || err || 'Camera failed to start.');
+      };
+      html5QrCode.current.start({ facingMode: "environment" }, cfg, onDecode, () => {})
+        .catch(async (err) => {
+          console.warn("Rear camera failed, trying any camera", err);
+          try {
+            const cams = await Html5Qrcode.getCameras();
+            if (!cams || cams.length === 0) throw new Error('No camera found on this device.');
+            await html5QrCode.current.start(cams[0].id, cfg, onDecode, () => {});
+          } catch (err2) {
+            console.error("Error starting scanner", err2);
+            const msg = explain(err2);
+            setCameraError(msg);
+            toast.error("Camera Error", msg);
+          }
+        });
     }
 
     return () => {
@@ -122,7 +146,7 @@ export default function Scanner() {
       const pass = { id: passDoc.id, ...passDoc.data() };
       
       // 2. Fetch Participant(s)
-      const isGroup = pass.type === 'COUPLE' || pass.type === 'GROUP';
+      const isGroup = pass.isGroup === true || pass.type === 'COUPLE' || pass.type === 'GROUP';
       
       let participant = null;
       let groupParticipants = [];
@@ -141,12 +165,13 @@ export default function Scanner() {
       let result = {
         isGroup,
         status: pass.status,
-        type: pass.type,
+        type: pass.regType || pass.type || 'Unknown',
         secureCode: pass.secureCode,
         passId: pass.id,
-        participantName: participant?.fullName || participant?.customFields?.full_name || 'Unknown',
-        participantCollege: participant?.customFields?.college_name || participant?.customFields?.custom_other_college_name || 'N/A',
-        participantPhone: participant?.mobile || participant?.customFields?.phone_number || 'N/A',
+        readableId: pass.readableId || null,
+        participantName: participant?.fullName || participant?.customFields?.full_name || pass.participantName || 'Unknown',
+        participantCollege: participant?.collegeId || pass.participantCollegeId || 'N/A',
+        participantPhone: participant?.mobile || pass.participantMobile || 'N/A',
         verificationStatus: participant?.verificationStatus || 'PENDING',
         isAlreadyCheckedIn: participant?.checkInStatus === 'CHECKED_IN'
       };
@@ -243,7 +268,12 @@ export default function Scanner() {
 
           <div style={{ width: '100%', height: '100%', position: 'relative', opacity: scannerActive ? 1 : 0, pointerEvents: scannerActive ? 'auto' : 'none', transition: 'opacity 0.2s' }}>
             <div id="qr-reader" ref={scannerRef} style={{ width: '100%', height: '100%' }}></div>
-            <div style={{ position: 'absolute', inset: 0, boxShadow: 'inset 0 0 0 1000px rgba(0,0,0,0.6)', pointerEvents: 'none', zIndex: 1 }} />
+            {cameraError && (
+              <div style={{ position: 'absolute', top: '5rem', left: '1rem', right: '1rem', zIndex: 5, background: 'rgba(239,68,68,0.15)', border: '1px solid var(--color-error)', color: 'white', padding: '1rem', borderRadius: '12px', textAlign: 'center' }}>
+                {cameraError}
+              </div>
+            )}
+            <div style={{ position: 'absolute', inset: 0, boxShadow: 'inset 0 0 0 1000px rgba(0,0,0,0.25)', pointerEvents: 'none', zIndex: 1 }} />
             <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '250px', height: '250px', border: '2px solid rgba(255,255,255,0.2)', borderRadius: '16px', zIndex: 2, pointerEvents: 'none' }}>
               <div style={{ position: 'absolute', top: -2, left: -2, width: '40px', height: '40px', borderTop: '4px solid var(--color-gold)', borderLeft: '4px solid var(--color-gold)', borderRadius: '16px 0 0 0' }} />
               <div style={{ position: 'absolute', top: -2, right: -2, width: '40px', height: '40px', borderTop: '4px solid var(--color-gold)', borderRight: '4px solid var(--color-gold)', borderRadius: '0 16px 0 0' }} />
@@ -273,7 +303,8 @@ export default function Scanner() {
               <div style={{ width: '100%', textAlign: 'center' }}>
                 <XCircle size={48} color="var(--color-error)" style={{ margin: '0 auto 1rem' }} />
                 <h3 style={{ fontSize: '1.25rem', color: 'white', marginBottom: '0.5rem' }}>Scan Failed</h3>
-                <p style={{ color: 'var(--color-error)', marginBottom: '1.5rem', background: 'rgba(239, 68, 68, 0.1)', padding: '1rem', borderRadius: '8px' }}>{error}</p>
+                <p style={{ color: 'var(--color-error)', marginBottom: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', padding: '1rem', borderRadius: '8px' }}>{error}</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: '1.5rem', wordBreak: 'break-all' }}>Raw error: {typeof error === 'object' ? JSON.stringify(error) : error}</p>
                 <button onClick={resetScanner} style={{ width: '100%', padding: '1rem', background: 'var(--surface-elevated)', border: '1px solid rgba(255,255,255,0.2)', color: 'white', borderRadius: '12px', fontSize: '1rem', fontWeight: 600 }}>
                   Scan Again
                 </button>
@@ -307,7 +338,13 @@ export default function Scanner() {
                     {!scanResult.isGroup && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>College:</span>
-                        <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{scanResult.participantCollege}</span>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textAlign: 'right', maxWidth: '60%' }}>{resolveCollege(scanResult.participantCollege)}</span>
+                      </div>
+                    )}
+                    {scanResult.readableId && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Pass ID:</span>
+                        <span style={{ fontSize: '0.9rem', fontWeight: 700, fontFamily: 'monospace', color: 'var(--color-gold)', letterSpacing: '1px' }}>{scanResult.readableId}</span>
                       </div>
                     )}
                     {!scanResult.isGroup && (

@@ -41,7 +41,7 @@ export default function HostelList() {
     const csvData = filteredData.map(p => [
       p.fullName || '',
       p.gender || '',
-      p.mobile || '',
+      p.mobile || p.phoneNumber || p.customFields?.phone_number || p.customFields?.mobile || p.customFields?.phone || '',
       p.hostelBuilding || '',
       p.hostelRoom || '',
       p.verificationStatus || 'PENDING',
@@ -70,13 +70,14 @@ export default function HostelList() {
       cell: (p) => (
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <span style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{p.fullName}</span>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{p.gender} {p.mobile ? `• ${p.mobile}` : ''}</span>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{p.gender} {(p.mobile || p.phoneNumber || p.customFields?.phone_number || p.customFields?.mobile || p.customFields?.phone) ? `• ${p.mobile || p.phoneNumber || p.customFields?.phone_number || p.customFields?.mobile || p.customFields?.phone}` : ''}</span>
         </div>
       )
     },
     { 
       header: 'Mobile', 
-      accessorKey: 'mobile'
+      accessorKey: 'mobile',
+      cell: (p) => p.mobile || p.phoneNumber || p.customFields?.phone_number || p.customFields?.mobile || p.customFields?.phone || ''
     },
     { 
       header: 'Building', 

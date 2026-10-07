@@ -27,7 +27,8 @@ export default function Packages() {
     features: '',
     earlyBirdEnabled: false,
     earlyBirdPrice: 0,
-    earlyBirdCapacity: 0
+    earlyBirdCapacity: 0,
+    earlyBirdSoldCount: 0
   });
 
   useEffect(() => {
@@ -56,7 +57,8 @@ export default function Packages() {
       features: pkg.features ? pkg.features.join(', ') : '',
       earlyBirdEnabled: pkg.earlyBirdEnabled || false,
       earlyBirdPrice: pkg.earlyBirdPrice || 0,
-      earlyBirdCapacity: pkg.earlyBirdCapacity || 0
+      earlyBirdCapacity: pkg.earlyBirdCapacity || 0,
+      earlyBirdSoldCount: pkg.earlyBirdSoldCount || 0
     });
     setIsEditing(true);
   }
@@ -75,7 +77,8 @@ export default function Packages() {
       features: '',
       earlyBirdEnabled: false,
       earlyBirdPrice: 0,
-      earlyBirdCapacity: 0
+      earlyBirdCapacity: 0,
+      earlyBirdSoldCount: 0
     });
     setIsEditing(true);
   }
@@ -102,7 +105,8 @@ export default function Packages() {
         features: formData.features.split(',').map(s => s.trim()).filter(Boolean),
         earlyBirdEnabled: formData.earlyBirdEnabled,
         earlyBirdPrice: Number(formData.earlyBirdPrice),
-        earlyBirdCapacity: Number(formData.earlyBirdCapacity)
+        earlyBirdCapacity: Number(formData.earlyBirdCapacity),
+        earlyBirdSoldCount: Number(formData.earlyBirdSoldCount)
       }, { merge: true });
       
       setIsEditing(false);
@@ -311,14 +315,18 @@ export default function Packages() {
             </div>
             
             {formData.earlyBirdEnabled && (
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+                <div className="form-group" style={{ flex: 1, marginBottom: 0, minWidth: '150px' }}>
                   <label className="form-label">Early Bird Price (₹)</label>
                   <input type="number" min="0" value={formData.earlyBirdPrice} onChange={e => setFormData({...formData, earlyBirdPrice: e.target.value})} className="form-input" />
                 </div>
-                <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                <div className="form-group" style={{ flex: 1, marginBottom: 0, minWidth: '150px' }}>
                   <label className="form-label">Early Bird Limit</label>
                   <input type="number" min="1" value={formData.earlyBirdCapacity} onChange={e => setFormData({...formData, earlyBirdCapacity: e.target.value})} className="form-input" />
+                </div>
+                <div className="form-group" style={{ flex: 1, marginBottom: 0, minWidth: '150px' }}>
+                  <label className="form-label">Early Bird Sold</label>
+                  <input type="number" min="0" value={formData.earlyBirdSoldCount} onChange={e => setFormData({...formData, earlyBirdSoldCount: e.target.value})} className="form-input" />
                 </div>
               </div>
             )}

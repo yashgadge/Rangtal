@@ -14,7 +14,7 @@
     },
     {
       "target": "vol-rangtal",
-      "public": "apps/admin/dist",
+      "public": "apps/volunteer/dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "rewrites": [ { "source": "**", "destination": "/index.html" } ]
     }

@@ -1,34 +1,25 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
 import { motion } from 'framer-motion';
 import GlassSurface from '../ui/GlassSurface';
+import useEventSettings, { formatEventDate } from '../../hooks/useEventSettings';
 import './Hero.css';
+
+const Skeleton = ({ width }) => (
+  <span className="hero-skeleton" style={{ width }} aria-hidden="true">&nbsp;</span>
+);
 
 export default function Hero() {
   const navigate = useNavigate();
   const heroRef = useRef(null);
   const ctaRef = useRef(null);
   
-  const [settings, setSettings] = useState({
-    EVENT: { eventName: 'Rangtal Garba Night', eventDate: '17 NOV 2026', location: 'JSPM UNIVERSITY GROUND', organizer: 'JSPM Wagholi Campus' },
-    REGISTRATION: { requireCollegeId: true }
-  });
-
-  useEffect(() => {
-    async function loadSettings() {
-      try {
-        const snap = await getDoc(doc(db, 'eventSettings', 'global'));
-        if (snap.exists()) {
-          setSettings(prev => ({ ...prev, ...snap.data() }));
-        }
-      } catch (err) {
-        console.error("Failed to load settings", err);
-      }
-    }
-    loadSettings();
-  }, []);
+  // No hardcoded event data: cached admin values render instantly, then Firestore syncs
+  const { settings: loadedSettings, synced } = useEventSettings();
+  const settings = loadedSettings || {};
+  const eventDate = formatEventDate(settings.EVENT?.eventDate);
+  const location = settings.EVENT?.location;
+  const organizer = settings.EVENT?.organizer;
 
   // High-performance 3D Camera Loop
   useEffect(() => {
@@ -185,25 +176,16 @@ export default function Hero() {
             <div className="hero-action-area">
               <div className="luxury-event-info">
                 <span className="info-val">
-                  {(() => {
-                    const dStr = settings.EVENT?.eventDate;
-                    if (!dStr) return '17-November - 2026';
-                    try {
-                      const d = new Date(dStr);
-                      if (isNaN(d.getTime())) return dStr;
-                      const day = d.getDate();
-                      const month = d.toLocaleString('default', { month: 'long' });
-                      const year = d.getFullYear();
-                      return `${day}-${month} - ${year}`;
-                    } catch { return dStr; }
-                  })()}
+                  {eventDate || (synced ? 'Date announcing soon' : <Skeleton width="11ch" />)}
                 </span>
                 <span className="info-sep">|</span>
-                <span className="info-val">{settings.EVENT?.location || 'JSPM UNIVERSITY GROUND'}</span>
+                <span className="info-val">
+                  {location || (synced ? 'Venue announcing soon' : <Skeleton width="16ch" />)}
+                </span>
               </div>
               <div className="hero-organized-by" style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <div className="organized-label">ORGANISED BY</div>
-                <div className="organized-val">{settings.EVENT?.organizer || 'JSPM Wagholi Campus'}</div>
+                <div className="organized-val">{organizer || 'JSPM Wagholi Campus'}</div>
               </div>
             </div>
 

@@ -23,18 +23,25 @@ exports.approveVerification = onCall({ invoker: "public" }, async (request) => {
       const partData = partSnap.data();
       const registrationId = partData.registrationId;
 
-      const regRef = db.collection("registrations").doc(registrationId);
-      const regSnap = await t.get(regRef);
+      const regRef = registrationId ? db.collection("registrations").doc(registrationId) : null;
+      const regSnap = regRef ? await t.get(regRef) : null;
+
+      // Idempotent: already approved participants must not inflate verifiedCount
+      if (partData.verificationStatus === "APPROVED") return;
 
       t.update(partRef, {
         verificationStatus: "APPROVED",
+        correctionReason: FieldValue.delete(),
         updatedAt: FieldValue.serverTimestamp()
       });
 
       // Update registration verified count
-      if (regSnap.exists) {
+      if (regSnap && regSnap.exists) {
         const regData = regSnap.data();
-        const newVerifiedCount = (regData.verifiedCount || 0) + 1;
+        const newVerifiedCount = Math.min(
+          (regData.verifiedCount || 0) + 1,
+          regData.participantCount || Number.MAX_SAFE_INTEGER
+        );
         const updates = {
           verifiedCount: newVerifiedCount,
           updatedAt: FieldValue.serverTimestamp()
@@ -153,36 +160,84 @@ exports.submitVerification = onCall({ invoker: "public" }, async (request) => {
 });
 
 /**
+ * Normalize whatever was stored as a document reference into a bucket-relative object path.
+ * Handles: plain paths, leading slashes, gs:// URIs and Firebase download URLs.
+ */
+function normalizeStoragePath(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  let p = raw.trim();
+  try {
+    if (p.startsWith("gs://")) {
+      p = p.replace(/^gs:\/\/[^/]+\//, "");
+    } else if (p.startsWith("http")) {
+      const m = p.match(/\/o\/([^?]+)/);
+      if (m) p = decodeURIComponent(m[1]);
+    }
+  } catch (_) { /* keep raw */ }
+  return p.replace(/^\/+/, "");
+}
+
+async function resolveUrlForFile(file) {
+  try {
+    const [url] = await file.getSignedUrl({ action: "read", expires: Date.now() + 3600000 });
+    return url;
+  } catch (signErr) {
+    // Service account may lack iam.serviceAccounts.signBlob — fall back to token URL
+    console.warn("getSignedUrl failed, falling back to download URL:", signErr.message);
+    const { getDownloadURL } = require("firebase-admin/storage");
+    return await getDownloadURL(file);
+  }
+}
+
+/**
  * Admin action: Get short-lived signed URL for a verification document.
  */
 exports.getVerificationDocumentUrl = onCall({ invoker: "public" }, async (request) => {
   requireAdmin(request);
-  const { path } = request.data;
-  
+  const { path: rawPath, url: storedUrl } = request.data || {};
+
+  const path = normalizeStoragePath(rawPath) || normalizeStoragePath(storedUrl);
   if (!path) throw new HttpsError("invalid-argument", "Missing path");
 
   try {
     const { getStorage } = require("firebase-admin/storage");
     const bucket = getStorage().bucket();
-    const file = bucket.file(path);
-    
-    // Check if file exists
-    const [exists] = await file.exists();
+
+    // 1. Exact path
+    let file = bucket.file(path);
+    let [exists] = await file.exists();
+
+    // 2. Legacy fallback: files were uploaded with a different prefix (temp_xxx vs registrationId).
+    //    Search the same folder for a file ending with the same "_pN_field_filename" suffix.
     if (!exists) {
-      throw new HttpsError("not-found", "Document not found in storage");
+      const slash = path.lastIndexOf("/");
+      const folder = slash >= 0 ? path.slice(0, slash + 1) : "";
+      const base = slash >= 0 ? path.slice(slash + 1) : path;
+      const suffixMatch = base.match(/_p\d+_.+$/);
+      const suffix = suffixMatch ? suffixMatch[0] : base;
+
+      if (folder) {
+        const [files] = await bucket.getFiles({ prefix: folder });
+        const candidate = files.find(f => f.name.endsWith(suffix));
+        if (candidate) {
+          file = candidate;
+          exists = true;
+        }
+      }
     }
-    
-    // Generate a signed URL that expires in 1 hour (3600000 ms)
-    const [url] = await file.getSignedUrl({
-      action: 'read',
-      expires: Date.now() + 3600000,
-    });
-    
-    return { url };
+
+    if (!exists) {
+      // Soft failure — avoids noisy 404s in the admin console; client can fall back to stored URL
+      console.warn("Verification document missing in storage:", path);
+      return { url: null, missing: true, path };
+    }
+
+    const url = await resolveUrlForFile(file);
+    return { url, path: file.name };
   } catch (error) {
-    console.error("Error generating signed URL:", error);
+    console.error("Error generating document URL:", error);
     if (error instanceof HttpsError) throw error;
-    throw new HttpsError("internal", `Debug Error: ${error.message} - Stack: ${error.stack}`);
+    throw new HttpsError("internal", `Failed to load document: ${error.message}`);
   }
 });
 

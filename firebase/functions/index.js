@@ -2,7 +2,7 @@ const { initializeApp } = require("firebase-admin/app");
 const { setGlobalOptions } = require("firebase-functions/v2");
 
 // Fix container timeout by increasing memory and allow public invocations, keep 1 instance warm
-setGlobalOptions({ minInstances: 1, maxInstances: 10, memory: "512MiB", timeoutSeconds: 60, invoker: "public" });
+setGlobalOptions({ maxInstances: 10, memory: "512MiB", timeoutSeconds: 60, invoker: "public" });
 
 // Initialize Firebase Admin once
 initializeApp({
@@ -18,11 +18,16 @@ exports.deleteRegistration = registrations.deleteRegistration;
 const payments = require("./api/payments");
 exports.createPaymentOrder = payments.createPaymentOrder;
 exports.verifyPayment = payments.verifyPayment;
+exports.razorpayWebhook = payments.razorpayWebhook;
+exports.syncPaymentStatus = payments.syncPaymentStatus;
+exports.adminForceApprovePayment = payments.adminForceApprovePayment;
 
 const passes = require("./api/passes");
 exports.generatePass = passes.generatePass;
 
 const checkins = require("./api/checkins");
+exports.checkInParticipant = checkins.checkInParticipantV2;
+exports.checkInGroupMembers = checkins.checkInGroupMembersV2;
 exports.checkInParticipantV2 = checkins.checkInParticipantV2;
 exports.checkInGroupMembersV2 = checkins.checkInGroupMembersV2;
 exports.verifyPass = checkins.verifyPass;

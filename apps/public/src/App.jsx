@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -6,11 +6,12 @@ import Lenis from 'lenis';
 
 import Navigation from './components/navigation/Navigation.jsx';
 import NetworkIndicator from './components/NetworkIndicator.jsx';
-import Home from './pages/Home.jsx';
-import Register from './pages/Register.jsx';
-import Account from './pages/Account.jsx';
-import PassViewer from './pages/PassViewer.jsx';
-import About from './pages/About.jsx';
+
+const Home = lazy(() => import('./pages/Home.jsx'));
+const Register = lazy(() => import('./pages/Register.jsx'));
+const Account = lazy(() => import('./pages/Account.jsx'));
+const PassViewer = lazy(() => import('./pages/PassViewer.jsx'));
+const About = lazy(() => import('./pages/About.jsx'));
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -62,13 +63,15 @@ function App() {
     <BrowserRouter>
       <NetworkIndicator />
       <Navigation />
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/account" element={<Account />} />
-        <Route path="/account/pass/:passId" element={<PassViewer />} />
-      </Routes>
+      <Suspense fallback={<div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#050505' }}><div className="loading-spinner"></div></div>}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/account" element={<Account />} />
+          <Route path="/account/pass/:passId" element={<PassViewer />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

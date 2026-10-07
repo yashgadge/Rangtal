@@ -37,24 +37,34 @@ exports.verifyPass = onCall({ invoker: "public" }, async (request) => {
       participants
     };
   } else {
-    let participantName = "Unknown";
+    let participantName = passData.participantName || "Unknown";
+    let participantMobile = passData.participantMobile || '';
+    let participantCollegeId = passData.participantCollegeId || '';
+
     if (passData.participantId) {
       const partDoc = await db.collection("participants").doc(passData.participantId).get();
-      if (partDoc.exists) participantName = partDoc.data().fullName;
+      if (partDoc.exists) {
+        participantName = partDoc.data().fullName || participantName;
+        participantMobile = partDoc.data().mobile || participantMobile;
+        participantCollegeId = partDoc.data().collegeId || participantCollegeId;
+      }
     }
     
     // Check if checked in (use deterministic ID)
     const checkinDoc = await db.collection("checkins").doc(`pass_${passDoc.id}`).get();
     if (checkinDoc.exists) {
-      return { status: "ALREADY_USED", participantName, type: regData.type, passId: secureCode };
+      return { status: "ALREADY_USED", participantName, participantMobile, participantCollegeId, type: regData.type, passId: secureCode, readableId: passData.readableId };
     }
     
     return {
       status: passData.status === "ACTIVE" ? "ISSUED" : passData.status,
       isGroup: false,
       participantName,
+      participantMobile,
+      participantCollegeId,
       type: regData.type,
-      passId: secureCode
+      passId: secureCode,
+      readableId: passData.readableId
     };
   }
 });

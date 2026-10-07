@@ -7,7 +7,7 @@ let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = get
 
 exports.createRegistration = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAuthenticatedUser(request);
-  const { packageId, collegeId, type, formFields, participants } = request.data;
+  const { packageId, collegeId, type, formFields, participants, verificationDocs } = request.data;
 
   if (!packageId || !collegeId || !type || !participants || !Array.isArray(participants)) {
     throw new HttpsError("invalid-argument", "Missing required registration parameters.");
@@ -50,6 +50,7 @@ exports.createRegistration = onCall({ invoker: "public" }, async (request) => {
     amount: authoritativeAmount,
     currency: "INR", // Or pull from package
     formFields: formFields || {},
+    verificationDocs: verificationDocs || [],
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp()
   };
@@ -61,7 +62,7 @@ exports.createRegistration = onCall({ invoker: "public" }, async (request) => {
     batch.set(registrationRef, registrationData);
 
     // Create Participant records
-    for (const p of participants) {
+    participants.forEach((p, index) => {
       const pFullName = p.fullName || "Participant";
       
       const customData = {};
@@ -80,8 +81,9 @@ exports.createRegistration = onCall({ invoker: "public" }, async (request) => {
         fullName: pFullName,
         passType: packageData.name,
         gender: p.gender || '',
-        collegeId: collegeId,
+        collegeId: p.collegeId || collegeId,
         mobile: p.mobile || '',
+        participantIndex: index,
         customFields: customData,
         isJspmHostel: p.isJspmHostel || '',
         hostelBuilding: p.hostelBuilding || '',
@@ -91,7 +93,7 @@ exports.createRegistration = onCall({ invoker: "public" }, async (request) => {
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp()
       });
-    }
+    });
 
     await batch.commit();
 

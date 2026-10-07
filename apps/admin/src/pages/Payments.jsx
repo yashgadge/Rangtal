@@ -16,6 +16,8 @@ export default function Payments() {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPayment, setSelectedPayment] = useState(null);
+  const [note, setNote] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const { data: partsLookup } = useFirebaseData('admin_parts_for_payments', async () => {
     const q = query(collection(db, 'participants'));
@@ -63,6 +65,30 @@ export default function Payments() {
       setLoading(false);
     }
   }
+
+  const handleForceApprove = async (paymentId) => {
+    if (!window.confirm("Are you sure you want to force approve this payment? This will issue a pass immediately.")) return;
+    setIsProcessing(true);
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+      const { functions } = await import('../firebase');
+      const adminForceApprovePayment = httpsCallable(functions, 'adminForceApprovePayment');
+      const res = await adminForceApprovePayment({ paymentId, transactionNote: note });
+      if (res.data.success) {
+        alert("Payment force approved successfully.");
+        setSelectedPayment(null);
+        setNote('');
+        fetchPayments();
+      } else {
+        alert("Force approve failed: " + res.data.reason);
+      }
+    } catch (err) {
+      console.error("Force approve error", err);
+      alert("Error: " + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const columns = [
     { 
@@ -170,6 +196,28 @@ export default function Payments() {
                 </div>
               </div>
             </div>
+
+            {selectedPayment.status !== 'SUCCESS' && (
+              <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem', flexDirection: 'column', background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '12px' }}>
+                <h4 style={{ color: 'white', margin: 0 }}>Manual Action</h4>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0 0 1rem 0' }}>Force approve if payment was received via alternate channels.</p>
+                <input 
+                  type="text" 
+                  placeholder="Note (e.g. Received via Cash/UPI)" 
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  style={{ width: '100%', padding: '0.75rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '4px' }}
+                />
+                <button 
+                  className="btn-primary" 
+                  style={{ width: '100%', background: 'var(--color-error)' }}
+                  onClick={() => handleForceApprove(selectedPayment.id)}
+                  disabled={isProcessing}
+                >
+                  {isProcessing ? 'Processing...' : 'Force Approve Payment'}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </DetailDrawer>

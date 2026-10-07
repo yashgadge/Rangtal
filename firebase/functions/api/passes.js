@@ -10,13 +10,7 @@ let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = get
  * Generate a pass for a registration.
  * Can be called by the participant who owns it, or an Admin.
  */
-exports.generatePass = onCall({ invoker: "public" }, async (request) => {
-  const uid = requireAuthenticatedUser(request);
-  const { registrationId } = request.data;
-  const isAdmin = request.auth.token.admin || request.auth.token.super_admin;
-  
-  if (!registrationId) throw new HttpsError("invalid-argument", "Missing registrationId");
-
+const _generatePassInternal = async (registrationId, uid, isAdmin) => {
   try {
     const result = await db.runTransaction(async (t) => {
       const regRef = db.collection("registrations").doc(registrationId);
@@ -24,7 +18,7 @@ exports.generatePass = onCall({ invoker: "public" }, async (request) => {
       if (!regSnap.exists) throw new HttpsError("not-found", "Registration not found");
       
       const regData = regSnap.data();
-      if (regData.uid !== uid && !isAdmin) {
+      if (regData.uid !== uid && !isAdmin && uid !== "SYSTEM") {
         throw new HttpsError("permission-denied", "Unauthorized");
       }
 
@@ -80,7 +74,8 @@ exports.generatePass = onCall({ invoker: "public" }, async (request) => {
       // Generate individual passes
       for (const partDoc of partsSnap.docs) {
         const passRef = db.collection("passes").doc();
-        const secureCode = crypto.randomBytes(16).toString('hex'); 
+        const secureCode = crypto.randomBytes(16).toString('hex');
+        const partData = partDoc.data();
         
         t.set(passRef, {
           id: passRef.id,
@@ -88,7 +83,9 @@ exports.generatePass = onCall({ invoker: "public" }, async (request) => {
           registrationId,
           participantId: partDoc.id,
           uid: regData.uid,
-          participantName: partDoc.data().fullName,
+          participantName: partData.fullName || 'Participant',
+          participantMobile: partData.mobile || '',
+          participantCollegeId: partData.collegeId || '',
           secureCode, 
           status: "ACTIVE",
           isGroup: false,
@@ -124,7 +121,7 @@ exports.generatePass = onCall({ invoker: "public" }, async (request) => {
       for(const pId of result.passIds) {
          await createAuditLog({
            actorId: uid,
-           actorRole: isAdmin ? "ADMIN" : "PARTICIPANT",
+           actorRole: isAdmin ? "ADMIN" : (uid === "SYSTEM" ? "SYSTEM" : "PARTICIPANT"),
            action: "PASS_GENERATED",
            targetType: "PASS",
            targetId: pId
@@ -138,6 +135,17 @@ exports.generatePass = onCall({ invoker: "public" }, async (request) => {
     if (error instanceof HttpsError) throw error;
     throw new HttpsError("internal", "Failed to generate pass");
   }
+};
+
+exports.generatePass = onCall({ invoker: "public" }, async (request) => {
+  const uid = requireAuthenticatedUser(request);
+  const { registrationId } = request.data;
+  const isAdmin = request.auth.token.admin || request.auth.token.super_admin;
+  
+  if (!registrationId) throw new HttpsError("invalid-argument", "Missing registrationId");
+  return await _generatePassInternal(registrationId, uid, isAdmin);
 });
+
+exports._generatePassInternal = _generatePassInternal;
 
 

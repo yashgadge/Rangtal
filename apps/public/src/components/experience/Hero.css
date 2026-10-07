@@ -548,16 +548,16 @@
 
 @media (max-width: 768px) {
   .hero-cinematic-container {
-    min-height: 100vh;
+    min-height: auto;
     height: 100svh; /* Use dynamic viewport height for mobile */
   }
   
   .hero-content-wrapper {
-    margin-top: -20vh; /* Pushed significantly higher to close the empty space at the top */
+    margin-top: -25vh; /* Shifted higher to close top empty space */
   }
 
-  .hero-dancer-left { width: 85vw; left: -25vw; bottom: 0; }
-  .hero-dancer-right { width: 80vw; right: -20vw; bottom: 0; }
+  .hero-dancer-left { width: 85vw; left: -25vw; bottom: 8vh; }
+  .hero-dancer-right { width: 80vw; right: -20vw; bottom: 8vh; }
   
   .luxury-event-info {
     flex-direction: column;
@@ -596,4 +596,24 @@
   .fg-object {
     display: none !important;
   }
+}
+
+/* Shimmer placeholder while admin-synced event info loads (no hardcoded values) */
+.hero-skeleton {
+  display: inline-block;
+  height: 1em;
+  vertical-align: middle;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(232, 213, 181, 0.08) 0%, rgba(212, 175, 55, 0.28) 50%, rgba(232, 213, 181, 0.08) 100%);
+  background-size: 200% 100%;
+  animation: hero-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes hero-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-skeleton { animation: none; }
 }

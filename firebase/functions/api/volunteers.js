@@ -27,7 +27,7 @@ exports.createVolunteer = onCall({ invoker: "public" }, async (request) => {
       displayName: name,
     });
 
-    await auth.setCustomUserClaims(userRecord.uid, { volunteer: true });
+    await auth.setCustomUserClaims(userRecord.uid, { volunteer: true, permissions: permissions || ["SCAN_PASS"] });
 
     const volunteerData = {
       uid: userRecord.uid,
@@ -111,6 +111,10 @@ exports.updateVolunteerPermissions = onCall({ invoker: "public" }, async (reques
       permissions,
       updatedAt: FieldValue.serverTimestamp(),
     });
+
+    const userRecord = await auth.getUser(targetUid);
+    const existingClaims = userRecord.customClaims || {};
+    await auth.setCustomUserClaims(targetUid, { ...existingClaims, permissions });
 
     await createAuditLog({
       actorId: uid,

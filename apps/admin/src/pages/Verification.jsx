@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, orderBy, where, limit } from 'firebase/firestore';
+import { collection, query, getDocs, getDoc, doc, orderBy, where, limit } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import PageHeader from '../components/PageHeader';
@@ -59,6 +59,12 @@ export default function Verification() {
     setCorrectionReason('');
     
     try {
+      // Refresh the registration doc to get the latest status (e.g. if just approved)
+      const regDoc = await getDoc(doc(db, 'registrations', reg.id));
+      if (regDoc.exists()) {
+        setSelectedReg({ id: regDoc.id, ...regDoc.data() });
+      }
+      
       const pQuery = query(collection(db, 'participants'), where('registrationId', '==', reg.id));
       const participantsSnap = await getDocs(pQuery);
       const parts = participantsSnap.docs.map(d => ({id: d.id, ...d.data()}));
@@ -71,12 +77,15 @@ export default function Verification() {
         if (reg.verificationDocs && reg.verificationDocs.length > 0) {
           const getUrlFn = httpsCallable(functions, 'getVerificationDocumentUrl');
           const docPromises = reg.verificationDocs.map(async (docMeta) => {
+            const name = docMeta.filename || (docMeta.path || '').split('/').pop() || 'Document';
+            const label = typeof docMeta.participantIndex === 'number' ? `P${docMeta.participantIndex + 1} · ${name}` : name;
             try {
-              const res = await getUrlFn({ path: docMeta.path });
-              return { name: docMeta.filename || docMeta.path.split('/').pop(), url: res.data.url };
+              const res = await getUrlFn({ path: docMeta.path, url: docMeta.url });
+              const url = res.data?.url || docMeta.url || null;
+              return { name: label, url, missing: !url };
             } catch (e) {
-              console.error("Failed to fetch signed URL for", docMeta.path, e);
-              return null;
+              console.warn("Signed URL unavailable, using stored URL for", docMeta.path, e?.message);
+              return { name: label, url: docMeta.url || null, missing: !docMeta.url };
             }
           });
           const results = await Promise.all(docPromises);
@@ -277,20 +286,25 @@ export default function Verification() {
                       {documents.map((doc, i) => (
                         <a 
                           key={i} 
-                          href={doc.url} 
+                          href={doc.missing ? undefined : doc.url} 
                           target="_blank" 
                           rel="noreferrer"
+                          aria-disabled={doc.missing || undefined}
+                          onClick={doc.missing ? (e) => e.preventDefault() : undefined}
                           style={{ 
                             display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem',
-                            background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--border-light)',
-                            textDecoration: 'none', color: 'var(--text-primary)', transition: 'all 0.2s'
+                            background: doc.missing ? 'rgba(255,80,80,0.06)' : 'rgba(255,255,255,0.03)', borderRadius: '8px',
+                            border: `1px solid ${doc.missing ? 'rgba(255,80,80,0.35)' : 'var(--border-light)'}`,
+                            textDecoration: 'none', color: 'var(--text-primary)', transition: 'all 0.2s',
+                            cursor: doc.missing ? 'not-allowed' : 'pointer'
                           }}
-                          onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--color-gold)'}
-                          onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-light)'}
+                          onMouseEnter={e => { if (!doc.missing) e.currentTarget.style.borderColor = 'var(--color-gold)'; }}
+                          onMouseLeave={e => { if (!doc.missing) e.currentTarget.style.borderColor = 'var(--border-light)'; }}
                         >
-                          <FileText size={24} color="var(--color-gold)" />
+                          <FileText size={24} color={doc.missing ? 'var(--color-error)' : 'var(--color-gold)'} />
                           <div style={{ flex: 1, overflow: 'hidden' }}>
                             <div style={{ fontSize: '0.85rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{doc.name}</div>
+                            {doc.missing && <div style={{ fontSize: '0.75rem', color: 'var(--color-error)' }}>File missing in storage</div>}
                           </div>
                         </a>
                       ))}

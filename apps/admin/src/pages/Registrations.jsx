@@ -83,12 +83,15 @@ export default function Registrations() {
       if (reg.verificationDocs && reg.verificationDocs.length > 0) {
         const getUrlFn = httpsCallable(functions, 'getVerificationDocumentUrl');
         const docPromises = reg.verificationDocs.map(async (docMeta) => {
+          const name = docMeta.filename || (docMeta.path || '').split('/').pop() || 'Document';
+          const label = typeof docMeta.participantIndex === 'number' ? `P${docMeta.participantIndex + 1} · ${name}` : name;
           try {
-            const res = await getUrlFn({ path: docMeta.path });
-            return { name: docMeta.filename || docMeta.path.split('/').pop(), url: res.data.url };
+            const res = await getUrlFn({ path: docMeta.path, url: docMeta.url });
+            const url = res.data?.url || docMeta.url || null;
+            return { name: label, url, missing: !url };
           } catch (e) {
-            console.error("Failed to fetch signed URL for", docMeta.path, e);
-            return null;
+            console.warn("Signed URL unavailable, using stored URL for", docMeta.path, e?.message);
+            return { name: label, url: docMeta.url || null, missing: !docMeta.url };
           }
         });
         const results = await Promise.all(docPromises);
@@ -288,11 +291,12 @@ export default function Registrations() {
               {documents.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {documents.map((doc, i) => (
-                    <a key={i} href={doc.url} target="_blank" rel="noreferrer" 
+                    <a key={i} href={doc.missing ? undefined : doc.url} target="_blank" rel="noreferrer" 
+                       onClick={doc.missing ? (e) => e.preventDefault() : undefined}
                        className="surface-flat"
-                       style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', color: 'var(--color-gold)', textDecoration: 'none' }}>
+                       style={{ padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', color: doc.missing ? 'var(--color-error)' : 'var(--color-gold)', textDecoration: 'none', cursor: doc.missing ? 'not-allowed' : 'pointer' }}>
                       <span>{doc.name}</span>
-                      <span>View &rarr;</span>
+                      <span>{doc.missing ? 'Missing' : <>View &rarr;</>}</span>
                     </a>
                   ))}
                 </div>

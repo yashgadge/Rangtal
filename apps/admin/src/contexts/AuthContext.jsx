@@ -21,7 +21,8 @@ export const AuthProvider = ({ children }) => {
           const tokenResult = await firebaseUser.getIdTokenResult(true);
           const claims = tokenResult.claims;
           
-          const isMasterAdmin = firebaseUser.email === 'yashgadge11155@gmail.com';
+          const masterEmails = ['yashgadge11155@gmail.com', 'yashgadge14@gmail.com', 'ygadge18@gmail.com', 'yash@gmail.com'];
+          const isMasterAdmin = masterEmails.includes(firebaseUser.email);
           
           if (!claims.admin && !claims.super_admin && !isMasterAdmin && !claims.volunteer) {
             // Not an admin or volunteer. Reject.

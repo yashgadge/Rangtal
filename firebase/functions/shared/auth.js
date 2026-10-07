@@ -10,7 +10,8 @@ function requireAuthenticatedUser(request) {
 function requireAdmin(request) {
   requireAuthenticatedUser(request);
   const token = request.auth.token;
-  const isMaster = token.email === 'yashgadge11155@gmail.com' || token.email === 'yashgadge14@gmail.com';
+  const masterEmails = ['yashgadge11155@gmail.com', 'yashgadge14@gmail.com', 'ygadge18@gmail.com', 'yash@gmail.com'];
+  const isMaster = masterEmails.includes(token.email);
   console.log("requireAdmin check:", { email: token.email, admin: token.admin, isMaster });
   if (!token.admin && !token.super_admin && !isMaster) {
     throw new HttpsError("permission-denied", "Admin privileges required.");
@@ -21,7 +22,8 @@ function requireAdmin(request) {
 function requireSuperAdmin(request) {
   requireAuthenticatedUser(request);
   const token = request.auth.token;
-  const isMaster = token.email === 'yashgadge11155@gmail.com' || token.email === 'yashgadge14@gmail.com';
+  const masterEmails = ['yashgadge11155@gmail.com', 'yashgadge14@gmail.com', 'ygadge18@gmail.com', 'yash@gmail.com'];
+  const isMaster = masterEmails.includes(token.email);
   console.log("requireSuperAdmin check:", { email: token.email, isMaster });
   if (!token.super_admin && !isMaster) {
     throw new HttpsError("permission-denied", "Super Admin privileges required.");
@@ -40,7 +42,8 @@ function requireVolunteer(request) {
 function requirePermission(request, requiredPermission) {
   requireAuthenticatedUser(request);
   const token = request.auth.token;
-  const isMaster = token.email === 'yashgadge11155@gmail.com' || token.email === 'yashgadge14@gmail.com';
+  const masterEmails = ['yashgadge11155@gmail.com', 'yashgadge14@gmail.com', 'ygadge18@gmail.com', 'yash@gmail.com'];
+  const isMaster = masterEmails.includes(token.email);
   
   if (token.admin || token.super_admin || isMaster) {
     return request.auth.uid; // Admins have all permissions
@@ -68,7 +71,8 @@ function requireOwnership(request, targetUid) {
 function requireAnyPermission(request, requiredPermissionsArray) {
   requireAuthenticatedUser(request);
   const token = request.auth.token;
-  const isMaster = token.email === 'yashgadge11155@gmail.com' || token.email === 'yashgadge14@gmail.com';
+  const masterEmails = ['yashgadge11155@gmail.com', 'yashgadge14@gmail.com', 'ygadge18@gmail.com', 'yash@gmail.com'];
+  const isMaster = masterEmails.includes(token.email);
   
   if (token.admin || token.super_admin || isMaster) {
     return request.auth.uid; // Admins have all permissions

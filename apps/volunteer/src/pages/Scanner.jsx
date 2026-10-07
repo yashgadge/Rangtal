@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Scanner as QrScanner } from '@yudiel/react-qr-scanner';
 import { httpsCallable } from 'firebase/functions';
-import { collection, query, getDocs } from 'firebase/firestore';
+import { collection, query, getDocs, doc, getDoc, where, limit } from 'firebase/firestore';
 import { functions, db } from '../firebase';
 import { ScanLine, CheckCircle2, XCircle, UserCheck, WifiOff } from 'lucide-react';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
@@ -12,6 +12,7 @@ export default function Scanner() {
   const toast = useToast();
   const [scanResult, setScanResult] = useState(null);
   const [error, setError] = useState(null);
+  const [cameraError, setCameraError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [scannerActive, setScannerActive] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -26,6 +27,16 @@ export default function Scanner() {
     const snap = await getDocs(query(collection(db, 'passes')));
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   });
+
+  const { data: collegesData } = useFirebaseData('vol_colleges', async () => {
+    const snap = await getDocs(query(collection(db, 'colleges')));
+    return snap.docs.reduce((acc, d) => { acc[d.id] = d.data().name; return acc; }, {});
+  });
+
+  const resolveCollege = (collegeId) => {
+    if (!collegeId || collegeId === 'N/A') return 'N/A';
+    return (collegesData && collegesData[collegeId]) || collegeId;
+  };
 
   useEffect(() => {
     const handleOnline = () => {
@@ -50,7 +61,7 @@ export default function Scanner() {
 
   const [selectedParticipants, setSelectedParticipants] = useState([]);
 
-  const handleScan = (detectedCodes) => {
+  const handleScan = async (detectedCodes) => {
     if (!scannerActive || isProcessing || detectedCodes.length === 0) return;
     
     const secureCode = detectedCodes[0].rawValue;
@@ -62,43 +73,89 @@ export default function Scanner() {
     setScanResult(null);
     setSelectedParticipants([]);
     
-    if (!passesData || !participantsData) {
-      setError("Data is still loading, please wait a moment.");
+    try {
+      let pass = null;
+      let participant = null;
+      let groupParticipants = [];
+
+      if (isOffline) {
+        if (!passesData || !participantsData) {
+          setError("Data is still loading for offline mode, please wait a moment.");
+          setIsProcessing(false);
+          return;
+        }
+        pass = passesData.find(p => p.secureCode === secureCode || p.id === secureCode);
+        if (pass && pass.participantId) {
+          participant = participantsData.find(p => p.id === pass.participantId);
+        }
+        if (pass && (pass.isGroup || pass.type === 'COUPLE' || pass.type === 'GROUP') && pass.registrationId) {
+          groupParticipants = participantsData.filter(p => p.registrationId === pass.registrationId) || [];
+        }
+      } else {
+        // Live Query
+        const passesRef = collection(db, 'passes');
+        const q = query(passesRef, where('secureCode', '==', secureCode), limit(1));
+        const passSnap = await getDocs(q);
+        
+        let passDoc = null;
+        if (!passSnap.empty) {
+          passDoc = passSnap.docs[0];
+        } else {
+          const docRef = doc(db, 'passes', secureCode);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) passDoc = docSnap;
+        }
+        
+        if (passDoc) {
+          pass = { id: passDoc.id, ...passDoc.data() };
+          
+          if (pass.participantId) {
+            const partSnap = await getDoc(doc(db, 'participants', pass.participantId));
+            if (partSnap.exists()) participant = { id: partSnap.id, ...partSnap.data() };
+          }
+          
+          if ((pass.isGroup || pass.type === 'COUPLE' || pass.type === 'GROUP') && pass.registrationId) {
+            const qParts = query(collection(db, 'participants'), where('registrationId', '==', pass.registrationId));
+            const partsSnap = await getDocs(qParts);
+            groupParticipants = partsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+          }
+        }
+      }
+
+      if (!pass) {
+        setError("Invalid QR Code: Pass not found in system.");
+        setIsProcessing(false);
+        return;
+      }
+
+      const isGroup = pass.isGroup === true || pass.type === 'COUPLE' || pass.type === 'GROUP';
+      
+      let result = {
+        isGroup,
+        status: pass.status,
+        type: pass.regType || pass.type || 'Unknown',
+        secureCode: pass.secureCode,
+        passId: pass.id,
+        readableId: pass.readableId || null,
+        participantName: participant?.fullName || pass.participantName || 'Unknown',
+        participantCollege: participant?.collegeId || pass.participantCollegeId || 'N/A',
+        participantPhone: participant?.mobile || pass.participantMobile || 'N/A',
+        verificationStatus: participant?.verificationStatus || 'PENDING',
+        isAlreadyCheckedIn: participant?.checkInStatus === 'CHECKED_IN'
+      };
+      
+      if (isGroup) {
+        result.participants = groupParticipants;
+        setSelectedParticipants(groupParticipants.filter(p => p.checkInStatus !== 'CHECKED_IN').map(p => p.id));
+      }
+
+      setScanResult(result);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to fetch pass details.");
+    } finally {
       setIsProcessing(false);
-      return;
     }
-
-    const pass = passesData.find(p => p.secureCode === secureCode || p.id === secureCode);
-    
-    if (!pass) {
-      setError("Invalid QR Code: Pass not found in system.");
-      setIsProcessing(false);
-      return;
-    }
-
-    const isGroup = pass.type === 'COUPLE' || pass.type === 'GROUP';
-    const participant = participantsData.find(p => p.id === pass.participantId);
-    
-    let result = {
-      isGroup,
-      status: pass.status,
-      type: pass.type,
-      secureCode: pass.secureCode,
-      passId: pass.id,
-      participantName: participant?.fullName || participant?.customFields?.full_name || 'Unknown',
-      participantCollege: participant?.customFields?.college_name || participant?.customFields?.custom_other_college_name || 'N/A',
-      participantPhone: participant?.mobile || participant?.customFields?.phone_number || 'N/A',
-      verificationStatus: participant?.verificationStatus || 'PENDING',
-      isAlreadyCheckedIn: participant?.checkInStatus === 'CHECKED_IN'
-    };
-    
-    if (isGroup) {
-      result.participants = participantsData.filter(p => p.registrationId === pass.registrationId) || [];
-      setSelectedParticipants(result.participants.filter(p => p.checkInStatus !== 'CHECKED_IN').map(p => p.id));
-    }
-
-    setScanResult(result);
-    setIsProcessing(false);
   };
 
   const resetScanner = () => {
@@ -118,7 +175,7 @@ export default function Scanner() {
     const toastId = toast.loading('Processing Check-In...');
     try {
       if (scanResult.isGroup) {
-        const checkInFn = httpsCallable(functions, 'checkInGroupMembers');
+        const checkInFn = httpsCallable(functions, 'checkInGroupMembersV2');
         const res = await checkInFn({ secureCode: secureCode, selectedParticipantIds: selectedParticipants });
         if (res.data && res.data.success === false) throw new Error(res.data.status || 'Check-in failed');
         setScanResult(prev => {
@@ -127,7 +184,7 @@ export default function Scanner() {
         });
         toast.update(toastId, 'success', `Successfully checked in ${selectedParticipants.length} participant(s)`);
       } else {
-        const checkInFn = httpsCallable(functions, 'checkInParticipant');
+        const checkInFn = httpsCallable(functions, 'checkInParticipantV2');
         const res = await checkInFn({ secureCode: secureCode });
         if (res.data && res.data.success === false) throw new Error(res.data.status || 'Check-in failed');
         setScanResult(prev => ({ ...prev, isAlreadyCheckedIn: true }));
@@ -167,10 +224,28 @@ export default function Scanner() {
             <div style={{ width: '100%', height: '100%', position: 'relative' }}>
               <QrScanner
                 onScan={handleScan}
-                onError={(e) => console.log('QR error:', e)}
+                formats={['qr_code']}
+                constraints={{ facingMode: 'environment' }}
+                scanDelay={200}
+                allowMultiple={false}
+                components={{ finder: false, audio: false }}
+                onError={(e) => {
+                  console.error('QR error:', e);
+                  const name = e?.name || '';
+                  if (name === 'NotAllowedError') setCameraError('Camera permission denied. Click the camera icon in the address bar and allow access, then reload.');
+                  else if (name === 'NotFoundError') setCameraError('No camera found on this device.');
+                  else if (name === 'NotReadableError') setCameraError('Camera is in use by another app. Close it and reload.');
+                  else if (name === 'OverconstrainedError') setCameraError('Camera could not start with the requested settings.');
+                  else setCameraError(e?.message || 'Camera failed to start.');
+                }}
                 styles={{ container: { width: '100%', height: '100%' }, video: { objectFit: 'cover' } }}
               />
-              <div style={{ position: 'absolute', inset: 0, boxShadow: 'inset 0 0 0 1000px rgba(0,0,0,0.6)', pointerEvents: 'none' }} />
+              {cameraError && (
+                <div style={{ position: 'absolute', top: '5rem', left: '1rem', right: '1rem', zIndex: 5, background: 'rgba(239,68,68,0.15)', border: '1px solid var(--color-error)', color: 'white', padding: '1rem', borderRadius: '12px', textAlign: 'center' }}>
+                  {cameraError}
+                </div>
+              )}
+              <div style={{ position: 'absolute', inset: 0, boxShadow: 'inset 0 0 0 1000px rgba(0,0,0,0.25)', pointerEvents: 'none' }} />
               <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '250px', height: '250px', border: '2px solid rgba(255,255,255,0.2)', borderRadius: '16px', zIndex: 2, pointerEvents: 'none' }}>
                 <div style={{ position: 'absolute', top: -2, left: -2, width: '40px', height: '40px', borderTop: '4px solid var(--color-gold)', borderLeft: '4px solid var(--color-gold)', borderRadius: '16px 0 0 0' }} />
                 <div style={{ position: 'absolute', top: -2, right: -2, width: '40px', height: '40px', borderTop: '4px solid var(--color-gold)', borderRight: '4px solid var(--color-gold)', borderRadius: '0 16px 0 0' }} />
@@ -234,7 +309,7 @@ export default function Scanner() {
                     {!scanResult.isGroup && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>College:</span>
-                        <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{scanResult.participantCollege}</span>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textAlign: 'right', maxWidth: '60%' }}>{resolveCollege(scanResult.participantCollege)}</span>
                       </div>
                     )}
                     {!scanResult.isGroup && (
@@ -253,6 +328,13 @@ export default function Scanner() {
                         }}>
                           {scanResult.verificationStatus}
                         </span>
+                      </div>
+                    )}
+                    
+                    {scanResult.readableId && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Pass ID:</span>
+                        <span style={{ fontSize: '0.9rem', fontWeight: 700, fontFamily: 'monospace', color: 'var(--color-gold)', letterSpacing: '1px' }}>{scanResult.readableId}</span>
                       </div>
                     )}
                     

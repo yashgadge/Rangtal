@@ -90,8 +90,8 @@ export default function Passes() {
         >
           {packages.map((pkg, idx) => {
             const isPopular = pkg.type === 'COUPLE' || pkg.name.toLowerCase().includes('couple');
-            const isEarlyBirdActive = pkg.earlyBirdEnabled && (pkg.soldCount || 0) < (pkg.earlyBirdCapacity || 0);
-            const remainingEarlyBird = isEarlyBirdActive ? (pkg.earlyBirdCapacity || 0) - (pkg.soldCount || 0) : 0;
+            const isEarlyBirdActive = pkg.earlyBirdEnabled && (pkg.earlyBirdSoldCount || 0) < (pkg.earlyBirdCapacity || 0);
+            const remainingEarlyBird = isEarlyBirdActive ? (pkg.earlyBirdCapacity || 0) - (pkg.earlyBirdSoldCount || 0) : 0;
             return (
               <motion.div key={pkg.id} variants={itemVariants} className="pass-card" style={{ 
                 background: 'linear-gradient(145deg, rgba(60,15,30,0.4), rgba(26,5,11,0.7))', 

@@ -9,6 +9,7 @@ import { Check, ChevronRight, Upload, AlertCircle, Package, User, Building, File
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
+import { invalidateCache } from '../../../../shared/utils/cache.js';
 import { useNavigate } from 'react-router-dom';
 import Stepper, { Step } from '../components/Stepper/Stepper.jsx';
 import ParticipantUploads from '../components/ui/ParticipantUploads.jsx';
@@ -38,13 +39,37 @@ export default function Register() {
   const [registrationResult, setRegistrationResult] = useState(null);
   const [error, setError] = useState(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [shakeTerms, setShakeTerms] = useState(false);
 
   useEffect(() => {
+    let unmounted = false;
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (unmounted) return;
       setUser(currentUser);
-      setAuthLoading(false);
+      if (currentUser) {
+        setAuthLoading(false);
+      }
     });
-    return () => unsubscribe();
+
+    import('firebase/auth').then(({ getRedirectResult }) => {
+      getRedirectResult(auth)
+        .then(() => {
+          if (!unmounted) setAuthLoading(false);
+        })
+        .catch((error) => {
+          console.warn("Could not get redirect result:", error);
+          if (!unmounted) setAuthLoading(false);
+        });
+    }).catch(e => {
+      console.warn("Failed to load firebase/auth module:", e);
+      if (!unmounted) setAuthLoading(false);
+    });
+
+    return () => {
+      unmounted = true;
+      unsubscribe();
+    };
   }, []);
 
   const { data: packages, loading: pkgsLoading, error: pkgsError } = useFirebaseData('packages_active', async () => {
@@ -65,6 +90,7 @@ export default function Register() {
   // Prevent accidental refresh
   useEffect(() => {
     const handleBeforeUnload = (e) => {
+      if (window.__isNavigatingAway) return;
       if (step > 1 && step < 4) {
         e.preventDefault();
         e.returnValue = ''; // Required for Chrome
@@ -83,7 +109,13 @@ export default function Register() {
     setSelectedPackage(pkg);
     const count = pkg.participantCount || 1;
     // Initialize participants array based on package
-    const initialParticipants = Array.from({ length: count }, () => ({ fullName: '', gender: '' }));
+    const initialParticipants = Array.from({ length: count }, (_, idx) => {
+      let initialGender = '';
+      if (pkg.type === 'COUPLE' && count === 2) {
+        initialGender = idx === 0 ? 'Male' : 'Female';
+      }
+      return { fullName: '', gender: initialGender };
+    });
     setParticipants(initialParticipants);
     setFiles(Array(count).fill(null));
   };
@@ -120,33 +152,49 @@ export default function Register() {
     setError(null);
     const toastId = toast.loading('Creating your order...', 'Please do not close this window');
     try {
-      // 1. Create Registration (Status becomes VERIFIED instantly)
-      const cleanedParticipants = participants.map(p => {
-        const cleaned = {};
-        for (const [key, value] of Object.entries(p)) {
-          if (Array.isArray(value) && value.length > 0 && (value[0] instanceof File)) continue;
-          cleaned[key] = value;
-        }
-        if (!cleaned.fullName) {
-          cleaned.fullName = cleaned.custom_name || cleaned.custom_full_name || "Participant";
-        }
-        if (selectedCollege === 'OTHER') {
-          cleaned.custom_other_college_name = otherCollegeName;
-        }
-        return cleaned;
-      });
+      let regId = null;
 
-      const createRegistration = httpsCallable(functions, 'createRegistration');
-      const regResponse = await createRegistration({
-        packageId: selectedPackage.id,
-        collegeId: selectedCollege,
-        type: selectedPackage.type,
-        participants: cleanedParticipants,
-        formFields: {}
-      });
-      
-      const regId = regResponse.data.registrationId;
-      setRegistrationResult(regResponse.data);
+      if (registrationResult) {
+        // Reuse existing registration
+        regId = registrationResult.registrationId || registrationResult.id;
+      } else {
+        setProcessingStatus({ title: 'Uploading Documents...', desc: 'Securely saving your IDs' });
+        const uploadedDocs = await handlePreUpload();
+
+        setProcessingStatus({ title: 'Creating Order...', desc: 'Please do not close this window.' });
+        
+        // 1. Create Registration (Status becomes VERIFIED instantly)
+        const cleanedParticipants = participants.map(p => {
+          const cleaned = {};
+          for (const [key, value] of Object.entries(p)) {
+            if (Array.isArray(value) && value.length > 0 && (value[0] instanceof File)) continue;
+            cleaned[key] = value;
+          }
+          if (!cleaned.fullName) {
+            cleaned.fullName = cleaned.custom_name || cleaned.custom_full_name || "Participant";
+          }
+          if (p.collegeId === 'OTHER') {
+            cleaned.custom_other_college_name = p.otherCollegeName;
+            cleaned.custom_college_name = "Other";
+          } else if (p.collegeId) {
+            cleaned.custom_college_name = colleges?.find(c => c.id === p.collegeId)?.name || p.collegeId;
+          }
+          return cleaned;
+        });
+
+        const createRegistration = httpsCallable(functions, 'createRegistration');
+        const regResponse = await createRegistration({
+          packageId: selectedPackage.id,
+          collegeId: participants[0]?.collegeId || 'OTHER',
+          type: selectedPackage.type,
+          participants: cleanedParticipants,
+          formFields: {},
+          verificationDocs: uploadedDocs
+        });
+        
+        regId = regResponse.data.registrationId;
+        setRegistrationResult({ registrationId: regId, ...regResponse.data });
+      }
 
       // 2. Create Payment Order
       const createOrder = httpsCallable(functions, 'createPaymentOrder');
@@ -168,7 +216,7 @@ export default function Register() {
           const verifyingToast = toast.loading('Verifying payment...', 'Issuing your passes');
           setProcessingStatus({ title: 'Verifying Payment...', desc: 'Securing your transaction' });
           try {
-            // 4. Verify Payment
+            // 4. Verify Payment (Automatically generates pass in background or via subsequent call)
             const verifyPayment = httpsCallable(functions, 'verifyPayment');
             await verifyPayment({
               paymentId: orderData.paymentId,
@@ -176,16 +224,15 @@ export default function Register() {
               gatewaySignature: response.razorpay_signature
             });
 
-            toast.update(verifyingToast, 'loading', 'Uploading Documents...', 'Please wait...');
-            setProcessingStatus({ title: 'Uploading Documents...', desc: 'Securely saving your IDs' });
-            await handleUploadAndSubmit(regId);
-
-            setProcessingStatus({ title: 'Generating Passes...', desc: 'Almost there!' });
+            // We do NOT block on generatePass here to provide a lightning fast experience.
+            // If verifyPayment succeeds, the pass will be generated. We optionally fire and forget.
             const generatePass = httpsCallable(functions, 'generatePass');
-            await generatePass({ registrationId: regId });
+            generatePass({ registrationId: regId }).catch(e => console.log("Background pass generation:", e));
 
             toast.update(verifyingToast, 'success', 'Payment Successful!', 'Redirecting to your dashboard...');
             setProcessingStatus({ title: 'Success!', desc: 'Redirecting to your dashboard...' });
+            invalidateCache(); // Clear the data cache to ensure the new passes show up
+            window.__isNavigatingAway = true;
             navigate('/account');
           } catch (err) {
             console.error("Verification failed", err);
@@ -198,8 +245,7 @@ export default function Register() {
         modal: {
           ondismiss: function() {
             setSubmitting(false);
-            toast.info('Payment Cancelled');
-            navigate('/account'); 
+            toast.info('Payment Cancelled. You can review your details and try again.');
           }
         },
         prefill: { email: user.email },
@@ -218,10 +264,12 @@ export default function Register() {
     }
   };
 
-  const handleUploadAndSubmit = async (regId) => {
+  const handlePreUpload = async () => {
     try {
       const uid = user.uid;
+      const uploadPromises = [];
       const documents = [];
+      const tempId = `temp_${Date.now()}`;
       
       for (let i = 0; i < participants.length; i++) {
         const p = participants[i];
@@ -229,28 +277,33 @@ export default function Register() {
           if (Array.isArray(value) && value.length > 0 && value[0] && value[0].size && value[0].type) {
             for (let j = 0; j < value.length; j++) {
               const file = value[j];
-              const path = `participants/${uid}/verification/${regId}_p${i+1}_${key}_${Date.now()}_${file.name}`;
+              const path = `participants/${uid}/verification/${tempId}_p${i+1}_${key}_${file.name}`;
               const fileRef = ref(storage, path);
-              await uploadBytesResumable(fileRef, file);
-              const downloadUrl = await getDownloadURL(fileRef);
-              documents.push({
-                participantIndex: i,
-                fieldId: key,
-                filename: file.name,
-                contentType: file.type,
-                size: file.size,
-                path: path,
-                url: downloadUrl
-              });
+              
+              const uploadTask = async () => {
+                await uploadBytesResumable(fileRef, file);
+                const downloadUrl = await getDownloadURL(fileRef);
+                return {
+                  participantIndex: i,
+                  fieldId: key,
+                  filename: file.name,
+                  contentType: file.type,
+                  size: file.size,
+                  path: path,
+                  url: downloadUrl
+                };
+              };
+              uploadPromises.push(uploadTask());
             }
           }
         }
       }
       
-      const submitRegistration = httpsCallable(functions, 'submitRegistration');
-      await submitRegistration({ registrationId: regId, documents });
+      const uploadedDocs = await Promise.all(uploadPromises);
+      documents.push(...uploadedDocs);
+      return documents;
     } catch (err) {
-      console.error("Submission failed", err);
+      console.error("Upload failed", err);
       throw err;
     }
   };
@@ -273,6 +326,7 @@ export default function Register() {
   // Prevent accidental refresh/back while filling form or processing payment
   useEffect(() => {
     const handleBeforeUnload = (e) => {
+      if (window.__isNavigatingAway) return;
       if (step > 1 || submitting || processingStatus) {
         e.preventDefault();
         e.returnValue = 'Are you sure you want to leave? Your registration progress may be lost.';
@@ -386,7 +440,7 @@ export default function Register() {
                   ) : packages && packages.length > 0 ? (
                     <div className="grid-packages">
                       {packages.map(pkg => {
-                        const isEarlyBirdActive = pkg.earlyBirdEnabled && (pkg.soldCount || 0) < (pkg.earlyBirdCapacity || 0);
+                        const isEarlyBirdActive = pkg.earlyBirdEnabled && (pkg.earlyBirdSoldCount || 0) < (pkg.earlyBirdCapacity || 0);
                         return (
                         <div 
                           key={pkg.id} 
@@ -431,8 +485,15 @@ export default function Register() {
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                     <h2 className="text-subtitle" style={{ margin: 0 }}>Participant Details</h2>
-                    <div className="badge">
-                      PERSON {currentParticipantIndex + 1} OF {participants.length}
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      {selectedPackage?.type === 'COUPLE' && (
+                        <div className="badge" style={{ background: 'rgba(212,175,55,0.1)', color: 'var(--color-gold)', border: '1px solid rgba(212,175,55,0.2)' }}>
+                          {participants[currentParticipantIndex]?.gender.toUpperCase()}
+                        </div>
+                      )}
+                      <div className="badge">
+                        PERSON {currentParticipantIndex + 1} OF {participants.length}
+                      </div>
                     </div>
                   </div>
                   
@@ -445,43 +506,54 @@ export default function Register() {
                     />
                   </div>
 
-                  {currentParticipantIndex === 0 && (
-                    <div style={{ marginBottom: '1.5rem' }}>
-                      <div className="form-group" style={{ marginBottom: selectedCollege === 'OTHER' ? '1rem' : 0 }}>
-                        <label className="text-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <Building size={14} /> Select Your College
-                        </label>
-                        <CustomSelect 
-                          disabled={colLoading} 
-                          value={selectedCollege} 
-                          onChange={(e) => setSelectedCollege(e.target.value)}
-                          placeholder={colLoading ? 'Loading Colleges...' : 'Select College / Institution...'}
-                          options={[
-                            ...(colleges ? colleges.map(c => ({ value: c.id, label: c.name })) : []),
-                            ...(eventSettings?.REGISTRATION?.allowOtherCollege ? [{ value: 'OTHER', label: 'Other (Not Listed)' }] : [])
-                          ]}
-                        />
-                        <div style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: 'rgba(239, 68, 68, 0.8)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500 }}>
-                          <AlertCircle size={12} /> College Pass-out students are strictly not allowed.
-                        </div>
+                  <div style={{ marginBottom: '1.5rem' }}>
+                    <div className="form-group" style={{ marginBottom: participants[currentParticipantIndex]?.collegeId === 'OTHER' ? '1rem' : 0 }}>
+                      <label className="text-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Building size={14} /> Select Your College <span style={{color: '#ef4444'}}>*</span>
+                      </label>
+                      <CustomSelect 
+                        disabled={colLoading} 
+                        value={participants[currentParticipantIndex]?.collegeId || ''} 
+                        onChange={(e) => handleParticipantChange('collegeId', e.target.value)}
+                        placeholder={colLoading ? 'Loading Colleges...' : 'Select College / Institution...'}
+                        options={[
+                          ...(colleges ? colleges.map(c => ({ value: c.id, label: c.name })) : []),
+                          ...(eventSettings?.REGISTRATION?.allowOtherCollege ? [{ value: 'OTHER', label: 'Other (Not Listed)' }] : [])
+                        ]}
+                      />
+                      <div style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: 'rgba(239, 68, 68, 0.8)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500 }}>
+                        <AlertCircle size={12} /> College Pass-out students are strictly not allowed.
                       </div>
-                      
-                      {selectedCollege === 'OTHER' && (
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label className="text-label">College Name <span style={{color: '#ef4444'}}>*</span></label>
-                          <input 
-                            type="text" 
-                            className="form-input" 
-                            value={otherCollegeName} 
-                            onChange={(e) => setOtherCollegeName(e.target.value)} 
-                            placeholder="Enter your college or institution name" 
-                          />
-                        </div>
-                      )}
                     </div>
-                  )}
+                    
+                    {participants[currentParticipantIndex]?.collegeId === 'OTHER' && (
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="text-label">College Name <span style={{color: '#ef4444'}}>*</span></label>
+                        <input 
+                          type="text" 
+                          className="form-input" 
+                          value={participants[currentParticipantIndex]?.otherCollegeName || ''} 
+                          onChange={(e) => handleParticipantChange('otherCollegeName', e.target.value)} 
+                          placeholder="Enter your college or institution name" 
+                        />
+                      </div>
+                    )}
+                  </div>
 
                   <div style={{ marginBottom: '1rem' }}>
+                    {selectedPackage?.type === 'COUPLE' && (
+                      <div className="form-group">
+                        <label className="text-label">Gender <span style={{color: '#ef4444'}}>*</span></label>
+                        <CustomSelect 
+                          value={participants[currentParticipantIndex]?.gender || ''} 
+                          onChange={() => {}}
+                          disabled={true}
+                          placeholder="Select Gender..."
+                          options={['Male', 'Female', 'Other']}
+                        />
+                      </div>
+                    )}
+
                     <div className="form-group">
                       <label className="text-label">Full Name <span style={{color: '#ef4444'}}>*</span></label>
                       <input 
@@ -498,29 +570,39 @@ export default function Register() {
                       <input 
                         type="tel" 
                         className="form-input" 
+                        style={{
+                          borderColor: (participants[currentParticipantIndex]?.mobile && participants[currentParticipantIndex].mobile.length > 0 && participants[currentParticipantIndex].mobile.length < 10) ? '#ef4444' : undefined
+                        }}
                         value={participants[currentParticipantIndex]?.mobile || ''} 
                         onChange={e => handleParticipantChange('mobile', e.target.value.replace(/[^0-9]/g, ''))} 
                         placeholder="10-digit mobile number" 
                         maxLength={10}
                       />
+                      {(participants[currentParticipantIndex]?.mobile && participants[currentParticipantIndex].mobile.length > 0 && participants[currentParticipantIndex].mobile.length < 10) && (
+                        <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: '#ef4444' }}>
+                          Mobile number must be exactly 10 digits.
+                        </div>
+                      )}
                     </div>
 
-                    <div className="form-group">
-                      <label className="text-label">Gender <span style={{color: '#ef4444'}}>*</span></label>
-                      <CustomSelect 
-                        value={participants[currentParticipantIndex]?.gender || ''} 
-                        onChange={e => {
-                          handleParticipantChange('gender', e.target.value);
-                          if (e.target.value !== 'Female') {
-                            handleParticipantChange('isJspmHostel', '');
-                            handleParticipantChange('hostelBuilding', '');
-                            handleParticipantChange('hostelRoom', '');
-                          }
-                        }}
-                        placeholder="Select Gender..."
-                        options={['Male', 'Female', 'Other']}
-                      />
-                    </div>
+                    {selectedPackage?.type !== 'COUPLE' && (
+                      <div className="form-group">
+                        <label className="text-label">Gender <span style={{color: '#ef4444'}}>*</span></label>
+                        <CustomSelect 
+                          value={participants[currentParticipantIndex]?.gender || ''} 
+                          onChange={e => {
+                            handleParticipantChange('gender', e.target.value);
+                            if (e.target.value !== 'Female') {
+                              handleParticipantChange('isJspmHostel', '');
+                              handleParticipantChange('hostelBuilding', '');
+                              handleParticipantChange('hostelRoom', '');
+                            }
+                          }}
+                          placeholder="Select Gender..."
+                          options={['Male', 'Female', 'Other']}
+                        />
+                      </div>
+                    )}
 
                     {participants[currentParticipantIndex]?.gender === 'Female' && (
                       <div className="form-group" style={{ marginTop: '1rem' }}>
@@ -609,7 +691,7 @@ export default function Register() {
                     )}
 
                     {/* Dynamic Custom Fields based on College */}
-                    {selectedCollege && colleges?.find(c => c.id === selectedCollege)?.customFields?.map(field => {
+                    {participants[currentParticipantIndex]?.collegeId && colleges?.find(c => c.id === participants[currentParticipantIndex].collegeId)?.customFields?.map(field => {
                       const value = participants[currentParticipantIndex]?.[`custom_${field.id}`] || '';
                       return (
                         <div key={field.id} className="form-group">
@@ -673,13 +755,13 @@ export default function Register() {
                     <button onClick={prevParticipant} className="btn-secondary">Back</button>
                     <button 
                       disabled={
-                        (currentParticipantIndex === 0 && !selectedCollege) || 
-                        (currentParticipantIndex === 0 && selectedCollege === 'OTHER' && !otherCollegeName.trim()) ||
+                        !participants[currentParticipantIndex]?.collegeId || 
+                        (participants[currentParticipantIndex]?.collegeId === 'OTHER' && !participants[currentParticipantIndex]?.otherCollegeName?.trim()) ||
                         !participants[currentParticipantIndex]?.fullName ||
                         !participants[currentParticipantIndex]?.mobile || participants[currentParticipantIndex]?.mobile.length !== 10 ||
                         !participants[currentParticipantIndex]?.gender ||
                         (eventSettings?.REGISTRATION?.requireCollegeId && (!participants[currentParticipantIndex]?.collegeIdFiles || participants[currentParticipantIndex]?.collegeIdFiles.length === 0)) ||
-                        (colleges?.find(c => c.id === selectedCollege)?.customFields?.some(f => {
+                        (colleges?.find(c => c.id === participants[currentParticipantIndex]?.collegeId)?.customFields?.some(f => {
                           if (!f.required) return false;
                           const val = participants[currentParticipantIndex]?.[`custom_${f.id}`];
                           if (Array.isArray(val)) return val.length === 0;
@@ -710,32 +792,70 @@ export default function Register() {
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.25rem' }}>Total Amount</div>
                         <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>
-                          ₹{selectedPackage?.earlyBirdEnabled && (selectedPackage?.soldCount || 0) < (selectedPackage?.earlyBirdCapacity || 0) ? selectedPackage?.earlyBirdPrice : selectedPackage?.price}
+                          ₹{selectedPackage?.earlyBirdEnabled && (selectedPackage?.earlyBirdSoldCount || 0) < (selectedPackage?.earlyBirdCapacity || 0) ? selectedPackage?.earlyBirdPrice : selectedPackage?.price}
                         </div>
-                        {selectedPackage?.earlyBirdEnabled && (selectedPackage?.soldCount || 0) < (selectedPackage?.earlyBirdCapacity || 0) && (
+                        {selectedPackage?.earlyBirdEnabled && (selectedPackage?.earlyBirdSoldCount || 0) < (selectedPackage?.earlyBirdCapacity || 0) && (
                           <div style={{ fontSize: '0.75rem', color: 'var(--color-gold)', fontWeight: 600, marginTop: '4px', textAlign: 'right' }}>Early Bird Applied</div>
                         )}
                       </div>
                     </div>
 
-                    <div style={{ marginBottom: '1.5rem' }}>
-                      <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.25rem' }}>College</div>
-                      <div style={{ fontSize: '1rem' }}>{colleges?.find(c => c.id === selectedCollege)?.name}</div>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '1.25rem', borderRadius: '12px', marginBottom: '2rem', border: '1px solid rgba(212,175,55,0.2)' }}>
+                      <div 
+                        className="terms-row" 
+                        style={{ 
+                          marginBottom: '1.25rem', display: 'flex', gap: '0.75rem', alignItems: 'flex-start',
+                          animation: shakeTerms ? 'shake 0.5s cubic-bezier(.36,.07,.19,.97) both' : 'none',
+                          color: shakeTerms ? '#ef4444' : 'inherit'
+                        }}
+                      >
+                        <input type="checkbox" id="terms" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} style={{ marginTop: '4px' }} />
+                        <label htmlFor="terms" style={{ color: shakeTerms ? '#ef4444' : 'rgba(255,255,255,0.9)', fontSize: '0.85rem', lineHeight: 1.4, transition: 'color 0.2s' }}>
+                          I verify that all information is accurate and matches physical IDs. I agree to the <a href="#" style={{color: 'var(--color-gold)', textDecoration: 'underline'}}>Terms of Entry</a>.
+                        </label>
+                      </div>
+
+                      {error && <div className="error-msg" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', color: '#ef4444', marginBottom: '1rem', fontSize: '0.85rem' }}><AlertCircle size={16} /> {error}</div>}
+
+                      <div className="btn-row">
+                        <button onClick={() => { setStep(2); setCurrentParticipantIndex(participants.length - 1); }} disabled={submitting} className="btn-secondary">Edit Details</button>
+                        <button 
+                          className="btn-primary" 
+                          disabled={submitting} 
+                          onClick={() => {
+                            if (!termsAccepted) {
+                              setShakeTerms(true);
+                              setTimeout(() => setShakeTerms(false), 500);
+                              return;
+                            }
+                            handleSubmitRegistration();
+                          }}
+                        >
+                          {submitting ? 'Processing...' : 'Confirm & Pay Instantly'}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid-2">
                       {participants.map((p, idx) => (
                         <div key={idx} style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px' }}>
-                          <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.5rem', textTransform: 'uppercase' }}>Person {idx + 1}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.75rem', textTransform: 'uppercase', fontWeight: 600 }}>Person {idx + 1}</div>
                           
-                          <div style={{ marginBottom: '0.5rem' }}>
-                            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>Full Name</div>
-                            <div style={{ fontSize: '0.95rem' }}>{p.fullName}</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                            <div>
+                              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>Full Name</div>
+                              <div style={{ fontSize: '0.85rem' }}>{p.fullName}</div>
+                            </div>
+                            
+                            <div>
+                              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>Gender</div>
+                              <div style={{ fontSize: '0.85rem' }}>{p.gender}</div>
+                            </div>
                           </div>
-                          
-                          <div style={{ marginBottom: '0.5rem' }}>
-                            <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>Gender</div>
-                            <div style={{ fontSize: '0.95rem' }}>{p.gender}</div>
+
+                          <div style={{ marginBottom: '0.75rem' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>College</div>
+                            <div style={{ fontSize: '0.85rem' }}>{p.collegeId === 'OTHER' ? p.otherCollegeName : colleges?.find(c => c.id === p.collegeId)?.name}</div>
                           </div>
 
                           {p.isJspmHostel === 'Yes' && (
@@ -747,8 +867,28 @@ export default function Register() {
 
                           {Object.keys(p).filter(k => k.startsWith('custom_') && p[k]).map(key => {
                             const fieldId = key.replace('custom_', '');
-                            const fieldDef = colleges?.find(c => c.id === selectedCollege)?.customFields?.find(f => f.id === fieldId);
-                            if (!fieldDef || fieldDef.type === 'image_upload') return null;
+                            const fieldDef = colleges?.find(c => c.id === p.collegeId)?.customFields?.find(f => f.id === fieldId);
+                            if (!fieldDef) return null;
+                            
+                            if (fieldDef.type === 'image_upload') {
+                              return (
+                                <div key={key} style={{ marginBottom: '1rem', marginTop: '0.5rem' }}>
+                                  <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.25rem' }}>{fieldDef.label}</div>
+                                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                    {p[key].map((file, i) => (
+                                      <div key={i} style={{ width: '60px', height: '60px', borderRadius: '4px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                        {file.type?.startsWith('image/') ? (
+                                          <img src={URL.createObjectURL(file)} alt="Uploaded file" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        ) : (
+                                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.05)', fontSize: '0.6rem', color: 'rgba(255,255,255,0.5)' }}>PDF</div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            }
+
                             const displayValue = typeof p[key] === 'boolean' ? (p[key] ? 'Yes' : 'No') : p[key];
                             return (
                               <div key={key} style={{ marginBottom: '0.25rem' }}>
@@ -757,25 +897,26 @@ export default function Register() {
                               </div>
                             );
                           })}
+
+                          {p.collegeIdFiles && p.collegeIdFiles.length > 0 && (
+                            <div style={{ marginBottom: '1rem', marginTop: '0.5rem' }}>
+                              <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', marginBottom: '0.25rem' }}>Student ID / College ID</div>
+                              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                {p.collegeIdFiles.map((file, i) => (
+                                  <div key={i} style={{ width: '60px', height: '60px', borderRadius: '4px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                    {file.type?.startsWith('image/') ? (
+                                      <img src={URL.createObjectURL(file)} alt="College ID" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    ) : (
+                                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.05)', fontSize: '0.6rem', color: 'rgba(255,255,255,0.5)' }}>PDF</div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
-                  </div>
-
-                  <div className="terms-row" style={{ marginTop: '1.5rem', marginBottom: '1.5rem', display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
-                    <input type="checkbox" id="terms" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} style={{ marginTop: '4px' }} />
-                    <label htmlFor="terms" style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem', lineHeight: 1.4 }}>
-                      I verify that all information is accurate and matches physical IDs. I agree to the <a href="#" style={{color: '#ffffff', textDecoration: 'underline'}}>Terms of Entry</a>.
-                    </label>
-                  </div>
-
-                  {error && <div className="error-msg" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '8px', color: '#ef4444', marginBottom: '1.5rem' }}><AlertCircle size={18} /> {error}</div>}
-
-                  <div className="btn-row">
-                    <button onClick={() => { setStep(2); setCurrentParticipantIndex(participants.length - 1); }} disabled={submitting} className="btn-secondary">Edit Details</button>
-                    <button className="btn-primary" disabled={!termsAccepted || submitting} onClick={handleSubmitRegistration}>
-                      {submitting ? 'Processing...' : 'Confirm & Pay Instantly'}
-                    </button>
                   </div>
                 </div>
               </Step>

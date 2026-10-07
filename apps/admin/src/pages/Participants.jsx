@@ -21,14 +21,15 @@ export default function Participants() {
   const [selectedRegistration, setSelectedRegistration] = useState(null);
   const [regLoading, setRegLoading] = useState(false);
   const [selectedCheckin, setSelectedCheckin] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
 
   const { data: passes } = useFirebaseData('admin_passes_lookup', async () => {
     const q = query(collection(db, 'passes'));
     const snap = await getDocs(q);
     return snap.docs.reduce((acc, doc) => {
       const p = doc.data();
-      if (p.participantId) {
-        acc[p.participantId] = p;
+      if (p.participantId && (!acc[p.participantId] || (acc[p.participantId].status !== 'ACTIVE' && p.status === 'ACTIVE'))) {
+        acc[p.participantId] = { ...p, id: doc.id };
       }
       return acc;
     }, {});
@@ -123,7 +124,8 @@ export default function Participants() {
     const toastId = toast.loading('Checking in...');
     try {
       const checkInFn = httpsCallable(functions, 'checkInParticipantV2');
-      const res = await checkInFn({ secureCode: pass.secureCode || pass.id });
+      if (!pass.secureCode) throw new Error('This pass has no secure code');
+      const res = await checkInFn({ secureCode: pass.secureCode });
       
       if (res.data && res.data.success === false) {
         throw new Error(res.data.status || 'Check-in failed');
@@ -136,6 +138,133 @@ export default function Participants() {
       toast.update(toastId, 'error', 'Error checking in', normalizeError(err));
     }
   }
+
+  const handleSelectRow = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = (allIds, isChecked) => {
+    if (isChecked) {
+      setSelectedIds(new Set(allIds));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+
+    const selectedParts = (data || []).filter(p => selectedIds.has(p.id));
+    const regIds = Array.from(new Set(selectedParts.map(p => p.registrationId).filter(Boolean)));
+
+    if (!window.confirm(`Are you sure you want to completely delete ${ids.length} selected participant(s) across ${regIds.length} registration(s)? This cannot be undone.`)) {
+      return;
+    }
+
+    const toastId = toast.loading(`Deleting ${regIds.length} registration(s)...`);
+    try {
+      const deleteFn = httpsCallable(functions, 'deleteRegistration');
+      for (const regId of regIds) {
+        await deleteFn({ registrationId: regId });
+      }
+      toast.update(toastId, 'success', `Successfully deleted ${ids.length} participant(s)`);
+      setSelectedIds(new Set());
+      refresh();
+    } catch (err) {
+      console.error(err);
+      toast.update(toastId, 'error', 'Error performing bulk deletion', normalizeError(err));
+    }
+  }
+
+  async function handleBulkCheckin() {
+    const selectedParts = (data || []).filter(p => selectedIds.has(p.id));
+    const eligible = selectedParts.filter(p => p.checkInStatus !== 'CHECKED_IN' && passes?.[p.id]);
+
+    if (eligible.length === 0) {
+      toast.warning('No Eligible Participants', 'None of the selected participants have passes ready for check-in or are already checked in.');
+      return;
+    }
+
+    if (!window.confirm(`Manually check in ${eligible.length} eligible participant(s)?`)) return;
+
+    const toastId = toast.loading(`Checking in ${eligible.length} participant(s)...`);
+    try {
+      const checkInFn = httpsCallable(functions, 'checkInParticipantV2');
+      let count = 0;
+      for (const p of eligible) {
+        const pass = passes[p.id];
+        if (!pass.secureCode) throw new Error('This pass has no secure code');
+        const res = await checkInFn({ secureCode: pass.secureCode });
+        if (res.data?.success !== false) count++;
+      }
+      toast.update(toastId, 'success', `Successfully checked in ${count} participant(s)`);
+      setSelectedIds(new Set());
+      refresh();
+    } catch (err) {
+      console.error(err);
+      toast.update(toastId, 'error', 'Error during bulk check-in', normalizeError(err));
+    }
+  }
+
+  async function handleBulkApprove() {
+    const selectedParts = (data || []).filter(p => selectedIds.has(p.id));
+    const eligible = selectedParts.filter(p => p.verificationStatus !== 'APPROVED');
+
+    if (eligible.length === 0) {
+      toast.info('Already Approved', 'All selected participants are already approved.');
+      return;
+    }
+
+    if (!window.confirm(`Approve verification for ${eligible.length} participant(s)?`)) return;
+
+    const toastId = toast.loading(`Approving ${eligible.length} participant(s)...`);
+    try {
+      const approveFn = httpsCallable(functions, 'approveVerification');
+      let count = 0;
+      for (const p of eligible) {
+        await approveFn({ participantId: p.id });
+        count++;
+      }
+      toast.update(toastId, 'success', `Successfully approved ${count} participant(s)`);
+      setSelectedIds(new Set());
+      refresh();
+    } catch (err) {
+      console.error(err);
+      toast.update(toastId, 'error', 'Error approving participants', normalizeError(err));
+    }
+  }
+
+  const bulkActions = (
+    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+      <button 
+        className="btn btn-secondary"
+        onClick={handleBulkApprove}
+        style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', color: 'var(--color-success)', borderColor: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+      >
+        <CheckCircle size={14} /> Approve Verification
+      </button>
+      <button 
+        className="btn btn-secondary"
+        onClick={handleBulkCheckin}
+        style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', color: 'var(--color-gold)', borderColor: 'var(--color-gold)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+      >
+        <CheckCircle size={14} /> Check-In Selected
+      </button>
+      <button 
+        className="btn btn-danger"
+        onClick={handleBulkDelete}
+        style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+      >
+        <Trash2 size={14} /> Delete Selected
+      </button>
+    </div>
+  );
 
   const columns = [
     { 
@@ -159,7 +288,7 @@ export default function Participants() {
         );
       }
     },
-    { header: "Pass ID", accessorKey: "passId", cell: (r) => <span style={{fontFamily: 'monospace', fontSize: '0.85rem'}}>{passes?.[r.id]?.readableId || 'N/A'}</span> },
+    { header: "Pass ID", accessorKey: "passId", cell: (r) => <span style={{fontFamily: 'monospace', fontSize: '0.85rem'}}>{passes?.[r.id]?.readableId || (passes?.[r.id] ? passes[r.id].id.slice(0,8).toUpperCase() : 'N/A')}</span> },
     { header: "Linked Email", accessorKey: "email", sortKey: "email", cell: (r) => <span style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>{r.email || 'Legacy'}</span> },
     { header: "College", accessorKey: "collegeId", sortKey: "collegeId", cell: (r) => {
       const cName = colleges ? (colleges[r.collegeId] || r.collegeId) : r.collegeId;
@@ -227,6 +356,11 @@ export default function Participants() {
           showSerial={true}
           exportable={true}
           exportFilename="participants_export.csv"
+          selectable={true}
+          selectedIds={selectedIds}
+          onSelectRow={handleSelectRow}
+          onSelectAll={handleSelectAll}
+          bulkActions={bulkActions}
           onRowClick={setSelectedParticipant}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
@@ -248,7 +382,7 @@ export default function Participants() {
               <div>
                 <h3 style={{ fontSize: '1.5rem', color: 'var(--text-primary)' }}>{selectedParticipant.fullName || selectedParticipant.custom_full_name || selectedParticipant.custom_name || 'Participant'}</h3>
                 <div style={{ color: 'var(--text-secondary)' }}>
-                  {selectedParticipant.email || selectedParticipant.custom_email || 'No email'} • {selectedParticipant.phoneNumber || selectedParticipant.custom_phone_number || selectedParticipant.custom_mobile || 'No phone'}
+                  {selectedParticipant.email || selectedParticipant.custom_email || 'No email'} • {selectedParticipant.mobile || selectedParticipant.phoneNumber || selectedParticipant.custom_phone_number || selectedParticipant.custom_mobile || 'No phone'}
                 </div>
               </div>
             </div>
@@ -278,7 +412,11 @@ export default function Participants() {
                 </div>
                 <div>
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>College</div>
-                  <div style={{ fontWeight: 500 }}>{selectedParticipant.college || 'N/A'}</div>
+                  <div style={{ fontWeight: 500 }}>{(colleges && colleges[selectedParticipant.collegeId]) || selectedParticipant.college || selectedParticipant.collegeId || 'N/A'}</div>
+                </div>
+                <div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Pass ID</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}>{passes?.[selectedParticipant.id]?.readableId || 'N/A'}</div>
                 </div>
                 <div>
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Verification</div>
@@ -335,18 +473,29 @@ export default function Participants() {
                 <div style={{ color: 'var(--text-muted)' }}>Loading documents...</div>
               ) : selectedRegistration?.verificationDocs?.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {selectedRegistration.verificationDocs.map((doc, idx) => (
-                    <div key={idx} style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
-                      <div style={{ fontSize: '0.9rem', marginBottom: '0.5rem', color: 'var(--color-gold)' }}>{doc.filename || 'Uploaded Document'}</div>
-                      {doc.url ? (
-                        <a href={doc.url} target="_blank" rel="noreferrer" style={{ display: 'inline-block' }}>
-                          <img src={doc.url} alt="Verification" style={{ maxWidth: '100%', maxHeight: '150px', borderRadius: '4px', objectFit: 'contain' }} />
-                        </a>
-                      ) : (
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>URL not available</div>
-                      )}
-                    </div>
-                  ))}
+                  {(() => {
+                    const groupMembers = data.filter(p => p.registrationId === selectedParticipant.registrationId);
+                    groupMembers.sort((a, b) => a.id.localeCompare(b.id));
+                    const myIndex = selectedParticipant.participantIndex !== undefined ? selectedParticipant.participantIndex : groupMembers.findIndex(p => p.id === selectedParticipant.id);
+                    const myDocs = selectedRegistration.verificationDocs.filter(d => d.participantIndex === myIndex || d.participantIndex === undefined);
+                    
+                    if (myDocs.length === 0) {
+                      return <div style={{ color: 'var(--text-muted)' }}>No verification documents for this specific participant.</div>;
+                    }
+                    
+                    return myDocs.map((doc, idx) => (
+                      <div key={idx} style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px solid var(--border-light)' }}>
+                        <div style={{ fontSize: '0.9rem', marginBottom: '0.5rem', color: 'var(--color-gold)' }}>{doc.filename || 'Uploaded Document'}</div>
+                        {doc.url ? (
+                          <a href={doc.url} target="_blank" rel="noreferrer" style={{ display: 'inline-block' }}>
+                            <img src={doc.url} alt="Verification" style={{ maxWidth: '100%', maxHeight: '150px', borderRadius: '4px', objectFit: 'contain' }} />
+                          </a>
+                        ) : (
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>URL not available</div>
+                        )}
+                      </div>
+                    ));
+                  })()}
                 </div>
               ) : (
                 <div style={{ color: 'var(--text-muted)' }}>No verification documents uploaded.</div>
