@@ -35,6 +35,7 @@ export default function CameraCapture({ onCapture, onCancel }) {
         setStream(mediaStream);
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
+          videoRef.current.play().catch(e => console.error("Auto-play blocked:", e));
         }
 
         // Check for multiple cameras to show flip button
@@ -169,6 +170,7 @@ export default function CameraCapture({ onCapture, onCancel }) {
             ref={videoRef} 
             autoPlay 
             playsInline
+            muted
             onLoadedMetadata={() => setIsVideoReady(true)}
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: capturedImage ? 'none' : 'block' }}
           />

@@ -1,8 +1,8 @@
 const { initializeApp } = require("firebase-admin/app");
 const { setGlobalOptions } = require("firebase-functions/v2");
 
-// Fix container timeout by increasing memory and allow public invocations, keep 1 instance warm
-setGlobalOptions({ maxInstances: 10, memory: "512MiB", timeoutSeconds: 60, invoker: "public" });
+// Fix container timeout by increasing memory and allow public invocations, keep instances warm and handle flash sales
+setGlobalOptions({ maxInstances: 100, concurrency: 80, memory: "512MiB", timeoutSeconds: 60, invoker: "public" });
 
 // Initialize Firebase Admin once
 initializeApp({
@@ -14,6 +14,7 @@ const registrations = require("./api/registrations");
 exports.createRegistration = registrations.createRegistration;
 exports.submitRegistration = registrations.submitRegistration;
 exports.deleteRegistration = registrations.deleteRegistration;
+exports.adminCreateOnSpotRegistration = registrations.adminCreateOnSpotRegistration;
 
 const payments = require("./api/payments");
 exports.createPaymentOrder = payments.createPaymentOrder;
@@ -31,6 +32,7 @@ exports.checkInGroupMembers = checkins.checkInGroupMembersV2;
 exports.checkInParticipantV2 = checkins.checkInParticipantV2;
 exports.checkInGroupMembersV2 = checkins.checkInGroupMembersV2;
 exports.verifyPass = checkins.verifyPass;
+exports.deleteCheckin = checkins.deleteCheckin;
 
 const verification = require("./api/verification");
 exports.approveVerification = verification.approveVerification;

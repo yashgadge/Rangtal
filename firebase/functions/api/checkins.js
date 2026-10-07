@@ -1,6 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const { requirePermission, requireAnyPermission } = require("../shared/auth");
+const { requirePermission, requireAnyPermission, requireAdmin } = require("../shared/auth");
 const { createAuditLog, createSecurityEvent } = require("../shared/audit");
 
 let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = getFirestore(); const val = _db[prop]; return typeof val === 'function' ? val.bind(_db) : val; }});
@@ -203,28 +203,42 @@ exports.checkInGroupMembersV2 = onCall({ invoker: "public" }, async (request) =>
       let successfulCheckins = 0;
       const checkedInIds = [];
 
-      // Pre-fetch all required documents to avoid querying inside a loop where possible,
-      // but in this case, deterministic IDs make it easy to do single doc gets.
+      // PHASE 1: ALL READS
+      const partDocs = [];
+      const indPassDocs = [];
+      const checkinSnaps = [];
+
       for (const partId of selectedParticipantIds) {
-        // Validate Participant belongs to this registration
         const partRef = db.collection("participants").doc(partId);
         const partSnap = await t.get(partRef);
-        if (!partSnap.exists || partSnap.data().registrationId !== registrationId) {
-          continue; // Skip invalid participants silently for atomicity of valid ones
-        }
+        partDocs.push({ partId, partSnap, partRef });
         
-        // Find individual pass for this participant
-        const indPassQuery = db.collection("passes").where("participantId", "==", partId).limit(1);
-        const indPassSnap = await t.get(indPassQuery);
-        if (indPassSnap.empty) continue;
-        const indPassDoc = indPassSnap.docs[0];
-
-        // Check if already checked in using deterministic ID
-        const checkinRef = db.collection("checkins").doc(`pass_${indPassDoc.id}`);
-        const checkinSnap = await t.get(checkinRef);
-        if (checkinSnap.exists) {
-          continue; // Already checked in
+        if (partSnap.exists && partSnap.data().registrationId === registrationId) {
+          const indPassQuery = db.collection("passes").where("participantId", "==", partId).limit(1);
+          const indPassSnap = await t.get(indPassQuery);
+          if (!indPassSnap.empty) {
+            const indPassDoc = indPassSnap.docs[0];
+            indPassDocs.push({ partId, indPassDoc });
+            
+            const checkinRef = db.collection("checkins").doc(`pass_${indPassDoc.id}`);
+            const checkinSnap = await t.get(checkinRef);
+            checkinSnaps.push({ partId, checkinSnap, checkinRef });
+          }
         }
+      }
+
+      // PHASE 2: ALL WRITES
+      for (const { partId, partSnap, partRef } of partDocs) {
+        if (!partSnap.exists || partSnap.data().registrationId !== registrationId) continue;
+        
+        const indPassObj = indPassDocs.find(p => p.partId === partId);
+        if (!indPassObj) continue;
+        const indPassDoc = indPassObj.indPassDoc;
+
+        const checkinObj = checkinSnaps.find(c => c.partId === partId);
+        if (!checkinObj || checkinObj.checkinSnap.exists) continue; // Already checked in
+        
+        const checkinRef = checkinObj.checkinRef;
 
         // Create checkin
         t.set(checkinRef, {
@@ -280,6 +294,55 @@ exports.checkInGroupMembersV2 = onCall({ invoker: "public" }, async (request) =>
     console.error("Group Checkin Error:", error);
     if (error instanceof HttpsError) throw error;
     throw new HttpsError("internal", "Failed to check in group participants");
+  }
+});
+
+exports.deleteCheckin = onCall({ invoker: "public" }, async (request) => {
+  const uid = requireAdmin(request);
+  const { checkinId } = request.data;
+  
+  if (!checkinId) {
+    throw new HttpsError("invalid-argument", "Missing checkinId");
+  }
+
+  try {
+    return await db.runTransaction(async (t) => {
+      const checkinRef = db.collection("checkins").doc(checkinId);
+      const checkinSnap = await t.get(checkinRef);
+      
+      if (!checkinSnap.exists) {
+        throw new HttpsError("not-found", "Checkin not found");
+      }
+
+      const checkinData = checkinSnap.data();
+
+      // Update Participant
+      if (checkinData.participantId) {
+        const partRef = db.collection("participants").doc(checkinData.participantId);
+        t.update(partRef, {
+          checkInStatus: "NOT_CHECKED_IN",
+          updatedAt: FieldValue.serverTimestamp()
+        });
+      }
+
+      // Update Registration
+      if (checkinData.registrationId) {
+        const regRef = db.collection("registrations").doc(checkinData.registrationId);
+        t.update(regRef, {
+          checkedInCount: FieldValue.increment(-1),
+          updatedAt: FieldValue.serverTimestamp()
+        });
+      }
+
+      // Delete Checkin Document
+      t.delete(checkinRef);
+
+      return { success: true };
+    });
+  } catch (error) {
+    console.error("Delete Checkin Error:", error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", "Failed to delete checkin");
   }
 });
 

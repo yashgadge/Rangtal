@@ -1,6 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const { requireAuthenticatedUser } = require("../shared/auth");
+const { requireAuthenticatedUser, requireAdmin } = require("../shared/auth");
 const { createAuditLog } = require("../shared/audit");
 
 let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = getFirestore(); const val = _db[prop]; return typeof val === 'function' ? val.bind(_db) : val; }});
@@ -196,6 +196,122 @@ exports.deleteRegistration = onCall({ invoker: "public" }, async (request) => {
     console.error("Error deleting registration:", error);
     if (error instanceof HttpsError) throw error;
     throw new HttpsError("internal", "Failed to delete registration and associated data.");
+  }
+});
+
+exports.adminCreateOnSpotRegistration = onCall({ invoker: "public" }, async (request) => {
+  const uid = requireAdmin(request);
+  const { fullName, gender, mobile, packageId, paymentMethod, email } = request.data;
+  
+  if (!fullName || !packageId || !paymentMethod) {
+    throw new HttpsError("invalid-argument", "Missing required fields");
+  }
+
+  try {
+    const packageRef = db.collection("packages").doc(packageId);
+    const packageSnap = await packageRef.get();
+    if (!packageSnap.exists) throw new HttpsError("not-found", "Package not found.");
+    const packageData = packageSnap.data();
+    
+    let orderId = "ON_SPOT_" + paymentMethod;
+    if (paymentMethod === "RAZORPAY") {
+      const Razorpay = require('razorpay');
+      const rzp = new Razorpay({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+      const rzpOrder = await rzp.orders.create({
+        amount: (packageData.price || 0) * 100, // amount in paise
+        currency: "INR",
+        receipt: `receipt_admin_${Date.now()}`
+      });
+      orderId = rzpOrder.id;
+    }
+
+    return await db.runTransaction(async (t) => {
+      const regRef = db.collection("registrations").doc();
+      const paymentRef = db.collection("payments").doc();
+      const partRef = db.collection("participants").doc();
+      
+      const timestamp = FieldValue.serverTimestamp();
+
+      const regStatus = paymentMethod === "RAZORPAY" ? "PAYMENT_PENDING" : "PAYMENT_SUCCESS";
+      const payStatus = paymentMethod === "RAZORPAY" ? "CREATED" : "SUCCESS";
+
+      t.set(regRef, {
+        id: regRef.id,
+        uid: uid,
+        email: email || "onspot@rhythmrebel.com",
+        packageId: packageId,
+        packageName: packageData.name,
+        collegeId: "ON_SPOT",
+        type: packageData.type || "SINGLE",
+        participantCount: 1,
+        checkedInCount: 0,
+        verifiedCount: 1,
+        status: regStatus,
+        amount: packageData.price || 0,
+        paymentId: paymentRef.id,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+
+      t.set(paymentRef, {
+        id: paymentRef.id,
+        gatewayOrderId: orderId,
+        registrationId: regRef.id,
+        uid: uid,
+        amount: packageData.price || 0,
+        status: payStatus,
+        method: paymentMethod,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+
+      t.set(partRef, {
+        id: partRef.id,
+        registrationId: regRef.id,
+        uid: uid,
+        email: email || "onspot@rhythmrebel.com",
+        fullName: fullName,
+        passType: packageData.name,
+        gender: gender || '',
+        collegeId: "ON_SPOT",
+        mobile: mobile || '',
+        participantIndex: 0,
+        verificationStatus: "APPROVED",
+        checkInStatus: "NOT_CHECKED_IN",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+
+      if (paymentMethod === "RAZORPAY") {
+        return { requiresPayment: true, orderId, paymentId: paymentRef.id, registrationId: regRef.id, amount: packageData.price };
+      }
+
+      // Generate pass immediately for CASH/COMPLIMENTARY
+      const prefix = packageData.type === 'COUPLE' ? "C" : (packageData.type?.startsWith('GROUP') ? "G" : "S");
+      const randomStr = require('crypto').randomBytes(3).toString('hex').toUpperCase().substring(0, 5);
+      const readableId = `RAN-${prefix}-${randomStr}`;
+      const secureCode = require('crypto').randomBytes(16).toString('hex');
+      const passRef = db.collection("passes").doc();
+
+      t.set(passRef, {
+        id: passRef.id,
+        readableId: readableId,
+        secureCode: secureCode,
+        registrationId: regRef.id,
+        participantId: partRef.id,
+        uid: uid,
+        type: packageData.type || "SINGLE",
+        isGroup: false,
+        status: "ACTIVE",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+
+      return { success: true, passId: readableId, registrationId: regRef.id };
+    });
+  } catch (error) {
+    console.error("adminCreateOnSpotRegistration error:", error);
+    throw new HttpsError("internal", error.message || "Failed to create on-spot registration");
   }
 });
 

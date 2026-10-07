@@ -4,9 +4,14 @@ import { db } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { motion } from 'framer-motion';
-import { RefreshCw, Users, ShieldCheck, Ticket } from 'lucide-react';
+import { RefreshCw, Users, ShieldCheck, Ticket, Trash2 } from 'lucide-react';
+import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
+import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
+import { functions } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
 
 export default function Checkins() {
+  const toast = useToast();
   const [checkins, setCheckins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -96,6 +101,32 @@ export default function Checkins() {
       header: "Time", 
       accessorKey: "timestamp", 
       cell: (r) => <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{r.timestamp?.toDate().toLocaleString() || 'N/A'}</span> 
+    },
+    {
+      header: "Actions",
+      cell: (r) => (
+        <button 
+          onClick={async () => {
+            if (!window.confirm('Are you sure you want to delete this check-in? This will allow the pass to be scanned again.')) return;
+            const toastId = toast.loading('Deleting check-in...');
+            try {
+              const fn = httpsCallable(functions, 'deleteCheckin');
+              await fn({ checkinId: r.id });
+              toast.update(toastId, 'success', 'Check-in deleted successfully');
+              fetchCheckins();
+              fetchStats();
+            } catch (err) {
+              console.error(err);
+              toast.update(toastId, 'error', 'Error deleting check-in', normalizeError(err));
+            }
+          }}
+          className="btn btn-icon"
+          style={{ padding: '0.4rem', color: 'var(--color-error)', background: 'rgba(255,0,0,0.1)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+          title="Delete Check-in"
+        >
+          <Trash2 size={16} />
+        </button>
+      )
     }
   ];
 

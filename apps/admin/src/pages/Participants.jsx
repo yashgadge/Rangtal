@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, limit, orderBy, doc, getDoc, writeBatch, serverTimestamp, increment } from 'firebase/firestore';
+import { collection, query, getDocs, limit, orderBy, doc, getDoc, writeBatch, serverTimestamp, increment, startAfter } from 'firebase/firestore';
 import { db } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
-import { Download, Trash2, CheckCircle } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Download, Trash2, CheckCircle, Plus, X, RefreshCw } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
@@ -23,6 +23,14 @@ export default function Participants() {
   const [selectedCheckin, setSelectedCheckin] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
 
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [manualForm, setManualForm] = useState({ fullName: '', packageId: '', gender: 'Male', mobile: '', paymentMethod: 'CASH', email: '' });
+
+  const { data: packages } = useFirebaseData('admin_packages_active', async () => {
+    const snap = await getDocs(query(collection(db, 'packages')));
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(p => p.active);
+  });
   const { data: passes } = useFirebaseData('admin_passes_lookup', async () => {
     const q = query(collection(db, 'passes'));
     const snap = await getDocs(q);
@@ -69,11 +77,45 @@ export default function Participants() {
     }, {});
   });
 
-  const { data, loading, error, refresh } = useFirebaseData('admin_participants', async () => {
-    const q = query(collection(db, 'participants'), limit(100));
-    const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  });
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [lastDoc, setLastDoc] = useState(null);
+  const [hasMore, setHasMore] = useState(true);
+
+  const fetchParticipants = async (loadMore = false) => {
+    try {
+      if (!loadMore) setLoading(true);
+      let q = query(collection(db, 'participants'), limit(100));
+      if (loadMore && lastDoc) {
+        q = query(collection(db, 'participants'), startAfter(lastDoc), limit(100));
+      }
+      const snap = await getDocs(q);
+      
+      if (snap.empty) {
+        setHasMore(false);
+      } else {
+        setLastDoc(snap.docs[snap.docs.length - 1]);
+        const newDocs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setData(prev => loadMore ? [...prev, ...newDocs] : newDocs);
+        if (snap.docs.length < 100) setHasMore(false);
+      }
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchParticipants();
+  }, []);
+
+  const refresh = () => {
+    setLastDoc(null);
+    setHasMore(true);
+    fetchParticipants(false);
+  };
 
   useEffect(() => {
     if (error) {
@@ -336,14 +378,24 @@ export default function Participants() {
         title="Participants" 
         description="Manage all registered participants." 
         actions={
-          <button 
-            className="btn btn-secondary"
-            onClick={() => window.open('/print-participants', '_blank')}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-          >
-            <Download size={18} />
-            Print ID Sheets
-          </button>
+          <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <button 
+              className="btn btn-primary"
+              onClick={() => setShowManualModal(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--color-gold)', color: '#000' }}
+            >
+              <Plus size={18} />
+              On-Spot Registration
+            </button>
+            <button 
+              className="btn btn-secondary"
+              onClick={() => window.open('/print-participants', '_blank')}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              <Download size={18} />
+              Print ID Sheets
+            </button>
+          </div>
         }
       />
 
@@ -361,6 +413,29 @@ export default function Participants() {
           onSelectRow={handleSelectRow}
           onSelectAll={handleSelectAll}
           bulkActions={bulkActions}
+          actions={
+            <>
+              {hasMore && (
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={() => fetchParticipants(true)}
+                  disabled={loading}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginRight: '0.5rem' }}
+                >
+                  <RefreshCw size={16} className={loading ? 'spin' : ''} />
+                  Load More (100)
+                </button>
+              )}
+              <button 
+                className="btn btn-primary" 
+                onClick={() => setShowManualModal(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--color-gold)', color: 'black' }}
+              >
+                <Plus size={16} />
+                On-Spot Registration
+              </button>
+            </>
+          }
           onRowClick={setSelectedParticipant}
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
@@ -546,10 +621,30 @@ export default function Participants() {
                     Pass has been successfully issued for this registration
                   </div>
                ) : (
-                  <div style={{ color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                   <div style={{ color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <div>No pass issued yet.</div>
                     <div>Registration Status: <span style={{ color: 'var(--text-primary)' }}>{selectedRegistration?.status || 'N/A'}</span></div>
                     <div>Payment Status: <span style={{ color: 'var(--text-primary)' }}>{selectedRegistration?.paymentStatus || 'N/A'}</span></div>
+                    
+                    {selectedRegistration?.status === 'PAYMENT_SUCCESS' && (
+                      <button 
+                        className="btn btn-primary" 
+                        onClick={async () => {
+                          try {
+                            const toastId = toast.loading('Generating pass...');
+                            const generatePassFn = httpsCallable(functions, 'generatePass');
+                            await generatePassFn({ registrationId: selectedParticipant.registrationId });
+                            toast.update(toastId, 'success', 'Pass generated successfully!');
+                            refresh();
+                          } catch (err) {
+                            toast.error('Failed to generate pass', normalizeError(err));
+                          }
+                        }}
+                        style={{ marginTop: '0.5rem', background: 'var(--color-gold)', color: 'black', width: 'max-content' }}
+                      >
+                        Force Generate Pass
+                      </button>
+                    )}
                   </div>
                )}
             </div>
@@ -647,6 +742,149 @@ export default function Participants() {
           </motion.div>
         </div>
       )}
+      {/* Manual Registration Modal */}
+      <AnimatePresence>
+        {showManualModal && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 20 }} 
+              animate={{ scale: 1, y: 0 }} 
+              exit={{ scale: 0.95, y: 20 }}
+              className="surface"
+              style={{ width: '100%', maxWidth: '500px', borderRadius: '12px', padding: '1.5rem', maxHeight: '90vh', overflowY: 'auto' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h2 style={{ margin: 0, color: 'var(--color-gold)' }}>On-Spot Registration</h2>
+                <button onClick={() => setShowManualModal(false)} className="btn btn-icon" style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)' }}><X size={20} /></button>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Full Name *</label>
+                <input type="text" className="form-input" style={{ width: '100%' }} value={manualForm.fullName} onChange={e => setManualForm({...manualForm, fullName: e.target.value})} placeholder="Participant Name" />
+              </div>
+              
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Email (Optional)</label>
+                <input type="email" className="form-input" style={{ width: '100%' }} value={manualForm.email} onChange={e => setManualForm({...manualForm, email: e.target.value})} placeholder="Participant Email" />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Mobile (Optional)</label>
+                <input type="tel" className="form-input" style={{ width: '100%' }} value={manualForm.mobile} onChange={e => setManualForm({...manualForm, mobile: e.target.value})} placeholder="Phone Number" />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div className="form-group">
+                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Gender</label>
+                  <select className="form-input" style={{ width: '100%' }} value={manualForm.gender} onChange={e => setManualForm({...manualForm, gender: e.target.value})}>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                
+                <div className="form-group">
+                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Payment Method</label>
+                  <select className="form-input" style={{ width: '100%' }} value={manualForm.paymentMethod} onChange={e => setManualForm({...manualForm, paymentMethod: e.target.value})}>
+                    <option value="CASH">Cash</option>
+                    <option value="RAZORPAY">Razorpay / UPI</option>
+                    <option value="COMPLIMENTARY">Complimentary (Free)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '2rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Select Package *</label>
+                <select className="form-input" style={{ width: '100%' }} value={manualForm.packageId} onChange={e => setManualForm({...manualForm, packageId: e.target.value})}>
+                  <option value="">-- Choose Package --</option>
+                  {packages?.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} (₹{p.price})</option>
+                  ))}
+                </select>
+              </div>
+
+              <button 
+                className="btn btn-primary" 
+                style={{ width: '100%', padding: '0.75rem' }} 
+                disabled={isSubmitting || !manualForm.fullName || !manualForm.packageId}
+                onClick={async () => {
+                  setIsSubmitting(true);
+                  const toastId = toast.loading('Creating on-spot registration...');
+                  try {
+                    const fn = httpsCallable(functions, 'adminCreateOnSpotRegistration');
+                    const res = await fn(manualForm);
+                    
+                    if (res.data.requiresPayment) {
+                      toast.update(toastId, 'info', 'Please scan QR code to pay...');
+                      
+                      const options = {
+                        key: import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_placeholder",
+                        amount: res.data.amount * 100,
+                        currency: "INR",
+                        name: "Rangtal Garba",
+                        description: "On-Spot Registration",
+                        order_id: res.data.orderId,
+                        handler: async function (response) {
+                          const paymentToast = toast.loading("Verifying payment...");
+                          try {
+                            const verifyFn = httpsCallable(functions, 'verifyPayment');
+                            await verifyFn({
+                              paymentId: res.data.paymentId,
+                              gatewayPaymentId: response.razorpay_payment_id,
+                              gatewaySignature: response.razorpay_signature
+                            });
+                            
+                            const generatePassFn = httpsCallable(functions, 'generatePass');
+                            await generatePassFn({ registrationId: res.data.registrationId });
+                            
+                            toast.update(paymentToast, 'success', 'Registration and Payment Complete!');
+                            setShowManualModal(false);
+                            setManualForm({ fullName: '', packageId: '', gender: 'Male', mobile: '', paymentMethod: 'CASH', email: '' });
+                            refresh();
+                          } catch (err) {
+                            console.error("Verification failed", err);
+                            toast.update(paymentToast, 'error', 'Payment Verification Failed', normalizeError(err));
+                          }
+                        },
+                        prefill: {
+                          name: manualForm.fullName,
+                          email: manualForm.email || "onspot@rhythmrebel.com",
+                          contact: manualForm.mobile || ""
+                        },
+                        theme: { color: "#D4AF37" }
+                      };
+                      
+                      const rzp = new window.Razorpay(options);
+                      rzp.on('payment.failed', function (response){
+                        toast.error('Payment Failed', response.error.description);
+                      });
+                      rzp.open();
+                      setIsSubmitting(false);
+                    } else {
+                      toast.update(toastId, 'success', `Registration Complete! Pass ID: ${res.data.passId}`);
+                      setShowManualModal(false);
+                      setManualForm({ fullName: '', packageId: '', gender: 'Male', mobile: '', paymentMethod: 'CASH', email: '' });
+                      refresh();
+                      setIsSubmitting(false);
+                    }
+                  } catch (err) {
+                    console.error(err);
+                    toast.update(toastId, 'error', 'Error creating registration', normalizeError(err));
+                    setIsSubmitting(false);
+                  }
+                }}
+              >
+                {isSubmitting ? 'Processing...' : 'Complete Registration'}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

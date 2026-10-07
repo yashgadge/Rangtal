@@ -42,13 +42,13 @@ export default function About() {
     <div style={{ paddingTop: '120px', minHeight: '100vh', backgroundColor: '#1A050B', color: 'var(--color-ivory)', padding: '120px 2rem 4rem 2rem' }}>
       <div style={{ maxWidth: '800px', margin: '0 auto' }}>
         <motion.div initial={{opacity: 0, y: 20}} animate={{opacity: 1, y: 0}} transition={{duration: 0.8}}>
-          <h1 className="text-display-large" style={{ color: 'var(--color-gold)', marginBottom: '2rem' }}>ABOUT RANGTAL</h1>
+          <h1 className="text-display-medium" style={{ color: 'var(--color-gold)', marginBottom: '1.5rem' }}>ABOUT RANGTAL</h1>
           
-          <div className="surface" style={{ padding: '2rem', borderRadius: '16px', background: 'rgba(60,15,30,0.4)', backdropFilter: 'blur(10px)', border: '1px solid rgba(232,213,181,0.15)', marginBottom: '4rem' }}>
-            <p style={{ fontSize: '1.2rem', lineHeight: 1.8, marginBottom: '1.5rem' }}>
-              Rangtal is the biggest and most awaited Garba Mahotsav of the year. We bring together culture, devotion, and celebration in a grand 9-night festival. Join us for a spectacular experience of traditional music, vibrant attire, and rhythmic dancing.
+          <div className="surface" style={{ padding: '1.5rem', borderRadius: '16px', background: 'rgba(60,15,30,0.4)', backdropFilter: 'blur(10px)', border: '1px solid rgba(232,213,181,0.15)', marginBottom: '3rem' }}>
+            <p style={{ fontSize: '1rem', lineHeight: 1.6, marginBottom: '1rem' }}>
+              Rangtal is the biggest and most awaited Garba Mahotsav of the year. We bring together culture, devotion, and celebration in a grand festival on 17 October - 2026. Join us for a spectacular experience of traditional music, vibrant attire, and rhythmic dancing.
             </p>
-            <p style={{ fontSize: '1.2rem', lineHeight: 1.8 }}>
+            <p style={{ fontSize: '1rem', lineHeight: 1.6 }}>
               Experience the magic of Navratri with the best artists, premium ambiance, and an unforgettable crowd.
             </p>
           </div>

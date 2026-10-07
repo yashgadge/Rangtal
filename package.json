@@ -17,6 +17,7 @@
     "mocha": "^12.0.3"
   },
   "dependencies": {
+    "agentation": "^3.1.2",
     "jimp": "^1.6.1"
   }
 }

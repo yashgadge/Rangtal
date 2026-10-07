@@ -128,7 +128,7 @@ exports.verifyPayment = onCall({ invoker: "public" }, async (request) => {
       }
       
       if (paymentData.status === "SUCCESS") {
-        return { alreadyProcessed: true }; // Idempotency
+        return { success: true, alreadyProcessed: true, registrationId: paymentData.registrationId }; // Idempotency
       }
 
       // Cryptographic verification

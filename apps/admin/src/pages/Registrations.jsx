@@ -31,6 +31,18 @@ export default function Registrations() {
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   });
 
+  const { data: paymentsLookup } = useFirebaseData('admin_payments_lookup', async () => {
+    const q = query(collection(db, 'payments'));
+    const snap = await getDocs(q);
+    return snap.docs.reduce((acc, doc) => {
+      const p = doc.data();
+      if (p.registrationId && p.status === 'SUCCESS') {
+        acc[p.registrationId] = p;
+      }
+      return acc;
+    }, {});
+  });
+
   useEffect(() => {
     if (error) {
       toast.error('Failed to load registrations', normalizeError(error));
@@ -158,7 +170,13 @@ export default function Registrations() {
   const columns = [
     { header: "Account", accessorKey: "email", cell: (r) => <span style={{fontWeight: 500}}>{r.email || r.uid}</span> },
     { header: "Type", accessorKey: "type", cell: (r) => <span className="badge badge-info">{r.type || 'SINGLE'}</span> },
-    { header: "Amount", accessorKey: "amount", cell: (r) => `₹${r.amount || 0}` },
+    { header: "Amount", accessorKey: "amount", cell: (r) => {
+        const actualPaid = paymentsLookup?.[r.id]?.amount;
+        if (actualPaid !== undefined && actualPaid !== null && actualPaid !== r.amount) {
+          return <span style={{ color: 'var(--color-gold)' }}>₹{actualPaid}</span>;
+        }
+        return `₹${r.amount || 0}`;
+    }},
     { header: "Status", accessorKey: "status", cell: (r) => <span className={`badge ${getBadgeColor(r.status)}`}>{r.status}</span> },
     { header: "Date", accessorKey: "createdAt", cell: (r) => r.createdAt?.toDate().toLocaleDateString() || 'N/A' }
   ];

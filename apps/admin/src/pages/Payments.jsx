@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, limit, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
@@ -84,6 +84,22 @@ export default function Payments() {
       }
     } catch (err) {
       console.error("Force approve error", err);
+      alert("Error: " + err.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDeletePayment = async (paymentId) => {
+    if (!window.confirm("Are you absolutely sure you want to delete this payment log? This action cannot be undone and will permanently remove this transaction.")) return;
+    setIsProcessing(true);
+    try {
+      await deleteDoc(doc(db, 'payments', paymentId));
+      alert("Payment record deleted successfully.");
+      setSelectedPayment(null);
+      fetchPayments();
+    } catch (err) {
+      console.error("Delete payment error", err);
       alert("Error: " + err.message);
     } finally {
       setIsProcessing(false);
@@ -218,6 +234,19 @@ export default function Payments() {
                 </button>
               </div>
             )}
+
+            <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem', flexDirection: 'column', background: 'rgba(255,50,50,0.03)', border: '1px solid rgba(255,50,50,0.2)', padding: '1.5rem', borderRadius: '12px' }}>
+              <h4 style={{ color: 'var(--color-error)', margin: 0 }}>Danger Zone</h4>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0 0 1rem 0' }}>Permanently delete this payment record from the database.</p>
+              <button 
+                className="btn-primary" 
+                style={{ width: '100%', background: 'transparent', border: '1px solid var(--color-error)', color: 'var(--color-error)' }}
+                onClick={() => handleDeletePayment(selectedPayment.id)}
+                disabled={isProcessing}
+              >
+                {isProcessing ? 'Processing...' : 'Delete Payment Record'}
+              </button>
+            </div>
           </div>
         )}
       </DetailDrawer>
