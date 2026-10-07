@@ -371,7 +371,7 @@ export default function Account() {
       
       {/* Background Plate matching Hero */}
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 0, pointerEvents: 'none' }}>
-        <div style={{ position: 'absolute', width: '120%', height: '120%', top: '-10%', left: '-10%', backgroundImage: 'url("/images/garba_bg.png")', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'blur(14px) brightness(0.7) saturate(1.2)' }} />
+        <div style={{ position: 'absolute', width: '120%', height: '120%', top: '-10%', left: '-10%', backgroundImage: 'url("https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404106/garba_bg.webp")', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'blur(14px) brightness(0.7) saturate(1.2)' }} />
         <div style={{ position: 'absolute', width: '100%', height: '100%', top: 0, left: 0, background: 'radial-gradient(ellipse at bottom, rgba(210,50,0,0.2) 0%, rgba(26,5,11,0.9) 100%)' }} />
         {/* Subtle animated mandala for premium feel */}
         <div style={{ position: 'absolute', top: '50%', left: '50%', width: '80vw', height: '80vw', transform: 'translate(-50%, -50%)', opacity: 0.3, pointerEvents: 'none' }}>

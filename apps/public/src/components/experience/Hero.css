@@ -51,7 +51,7 @@
 .bg-plate {
   position: absolute;
   width: 120%; height: 120%;
-  background-image: url('/images/garba_bg.png');
+  background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404106/garba_bg.webp');
   background-size: cover;
   background-position: center;
   /* Pre-blur using a static filter, extremely performant compared to animating blur */
@@ -119,14 +119,14 @@
   /* Pre-blurred with CSS */
 }
 /* Reusing transparent dancers with various sizes, opacities, and flips */
-.c-far-1 { background-image: url('/images/transparent_left.png'); width: 15%; height: 40%; left: 5%; bottom: 20%; transform: scaleX(-1); filter: blur(6px) brightness(0.6); opacity: 0.6; }
-.c-far-2 { background-image: url('/images/transparent_right.png'); width: 12%; height: 35%; left: 15%; bottom: 25%; filter: blur(7px) brightness(0.5); opacity: 0.5; }
-.c-far-3 { background-image: url('/images/transparent_left.png'); width: 18%; height: 45%; left: 30%; bottom: 18%; filter: blur(5px) brightness(0.7); opacity: 0.7; }
-.c-far-4 { background-image: url('/images/transparent_right.png'); width: 14%; height: 42%; left: 45%; bottom: 22%; transform: scaleX(-1); filter: blur(6px) brightness(0.5); opacity: 0.5; }
-.c-far-5 { background-image: url('/images/transparent_left.png'); width: 11%; height: 32%; right: 40%; bottom: 28%; filter: blur(7px) brightness(0.4); opacity: 0.4; }
-.c-far-6 { background-image: url('/images/transparent_right.png'); width: 16%; height: 44%; right: 25%; bottom: 20%; transform: scaleX(-1); filter: blur(5px) brightness(0.6); opacity: 0.7; }
-.c-far-7 { background-image: url('/images/transparent_left.png'); width: 13%; height: 38%; right: 15%; bottom: 24%; filter: blur(6px) brightness(0.5); opacity: 0.5; }
-.c-far-8 { background-image: url('/images/transparent_right.png'); width: 19%; height: 48%; right: 5%; bottom: 16%; filter: blur(5px) brightness(0.7); opacity: 0.6; }
+.c-far-1 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_left.webp'); width: 15%; height: 40%; left: 5%; bottom: 20%; transform: scaleX(-1); filter: blur(6px) brightness(0.6); opacity: 0.6; }
+.c-far-2 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_right.webp'); width: 12%; height: 35%; left: 15%; bottom: 25%; filter: blur(7px) brightness(0.5); opacity: 0.5; }
+.c-far-3 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_left.webp'); width: 18%; height: 45%; left: 30%; bottom: 18%; filter: blur(5px) brightness(0.7); opacity: 0.7; }
+.c-far-4 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_right.webp'); width: 14%; height: 42%; left: 45%; bottom: 22%; transform: scaleX(-1); filter: blur(6px) brightness(0.5); opacity: 0.5; }
+.c-far-5 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_left.webp'); width: 11%; height: 32%; right: 40%; bottom: 28%; filter: blur(7px) brightness(0.4); opacity: 0.4; }
+.c-far-6 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_right.webp'); width: 16%; height: 44%; right: 25%; bottom: 20%; transform: scaleX(-1); filter: blur(5px) brightness(0.6); opacity: 0.7; }
+.c-far-7 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_left.webp'); width: 13%; height: 38%; right: 15%; bottom: 24%; filter: blur(6px) brightness(0.5); opacity: 0.5; }
+.c-far-8 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_right.webp'); width: 19%; height: 48%; right: 5%; bottom: 16%; filter: blur(5px) brightness(0.7); opacity: 0.6; }
 
 /* ==================================================
    Z = -100: HANGING LANTERNS
@@ -174,10 +174,10 @@
 .layer-crowd-near {
   transform: translateZ(-50px) scale(1.05);
 }
-.c-near-1 { background-image: url('/images/transparent_right.png'); width: 22%; height: 60%; left: 18%; bottom: 15%; filter: blur(3px) brightness(0.75); opacity: 0.9; transform: scaleX(-1); }
-.c-near-2 { background-image: url('/images/transparent_left.png'); width: 24%; height: 65%; left: 38%; bottom: 12%; filter: blur(3px) brightness(0.8); opacity: 0.85; }
-.c-near-3 { background-image: url('/images/transparent_right.png'); width: 21%; height: 58%; right: 35%; bottom: 14%; filter: blur(4px) brightness(0.7); opacity: 0.8; transform: scaleX(-1); }
-.c-near-4 { background-image: url('/images/transparent_left.png'); width: 26%; height: 68%; right: 12%; bottom: 10%; filter: blur(2px) brightness(0.85); opacity: 0.95; }
+.c-near-1 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_right.webp'); width: 22%; height: 60%; left: 18%; bottom: 15%; filter: blur(3px) brightness(0.75); opacity: 0.9; transform: scaleX(-1); }
+.c-near-2 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_left.webp'); width: 24%; height: 65%; left: 38%; bottom: 12%; filter: blur(3px) brightness(0.8); opacity: 0.85; }
+.c-near-3 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_right.webp'); width: 21%; height: 58%; right: 35%; bottom: 14%; filter: blur(4px) brightness(0.7); opacity: 0.8; transform: scaleX(-1); }
+.c-near-4 { background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_left.webp'); width: 26%; height: 68%; right: 12%; bottom: 10%; filter: blur(2px) brightness(0.85); opacity: 0.95; }
 
 /* ==================================================
    Z = 0: PHYSICAL FLOOR
@@ -214,7 +214,7 @@
   height: 120vh;
   left: -2vw;
   bottom: -5vh; /* Moved up from -15vh */
-  background-image: url('/images/transparent_left.png');
+  background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_left.webp');
   background-position: bottom right;
   /* Interactive Parallax: slides left on scroll but stays anchored vertically */
   transform: translateX(calc(var(--scroll-y) * -0.2px));
@@ -231,7 +231,7 @@
   height: 115vh;
   right: 0vw;
   bottom: 0vh; /* Moved up from -10vh */
-  background-image: url('/images/transparent_right.png');
+  background-image: url('https://res.cloudinary.com/sy2pu4gk/image/upload/v1791404107/transparent_right.webp');
   background-position: bottom left;
   /* Interactive Parallax: slides right on scroll but stays anchored vertically */
   transform: translateX(calc(var(--scroll-y) * 0.2px));
