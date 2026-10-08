@@ -12,8 +12,10 @@ let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = get
 
 exports.createPaymentOrder = onCall({ invoker: "public" }, async (request) => {
   const uid = requireAuthenticatedUser(request);
-  const { registrationId } = request.data;
+  const { registrationId, ping } = request.data;
   
+  if (ping) return { status: "awake" };
+
   if (!registrationId) throw new HttpsError("invalid-argument", "Missing registrationId");
 
   const regRef = db.collection("registrations").doc(registrationId);

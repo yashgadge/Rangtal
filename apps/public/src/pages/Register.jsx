@@ -107,6 +107,11 @@ export default function Register() {
 
   const handlePackageSelect = (pkg) => {
     setSelectedPackage(pkg);
+    
+    // Ping the backend to wake up the server (Pre-warming)
+    const createOrder = httpsCallable(functions, 'createPaymentOrder');
+    createOrder({ ping: true }).catch(() => {});
+
     const count = pkg.participantCount || 1;
     // Initialize participants array based on package
     const initialParticipants = Array.from({ length: count }, (_, idx) => {
