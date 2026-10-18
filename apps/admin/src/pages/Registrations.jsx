@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, orderBy, limit, where } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, doc, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
-import { Download } from 'lucide-react';
+import { Download, AlertTriangle, Ticket } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
@@ -26,9 +26,9 @@ export default function Registrations() {
   const [correctionReason, setCorrectionReason] = useState('');
 
   const { data: registrations, loading, error, refresh } = useFirebaseData('admin_registrations', async () => {
-    const q = query(collection(db, 'registrations'), orderBy('createdAt', 'desc'), limit(100));
+    const q = query(collection(db, 'registrations'), orderBy('createdAt', 'desc'));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(d => !d.isComplimentary);
   });
 
   const { data: paymentsLookup } = useFirebaseData('admin_payments_lookup', async () => {
@@ -160,6 +160,57 @@ export default function Registrations() {
     }
   }
 
+  async function handleGeneratePass() {
+    if (!selectedReg) return;
+    if (!window.confirm(`Generate pass for ${selectedReg.email || selectedReg.uid}?\n\nOnly do this if you have manually confirmed payment was received. This will mark the registration as PASS_ISSUED.`)) return;
+    const toastId = toast.loading('Generating pass...');
+    try {
+      setLoadingDetails(true);
+      const generatePassFn = httpsCallable(functions, 'generatePass');
+      await generatePassFn({ registrationId: selectedReg.id });
+      toast.update(toastId, 'success', 'Pass generated successfully!');
+      // Reload passes for this registration
+      const passQuery = query(collection(db, 'passes'), where('registrationId', '==', selectedReg.id));
+      const passesSnap = await getDocs(passQuery);
+      setPasses(passesSnap.docs.map(d => ({id: d.id, ...d.data()})));
+      refresh();
+    } catch (err) {
+      console.error(err);
+      toast.update(toastId, 'error', 'Failed to generate pass', normalizeError(err));
+    } finally {
+      setLoadingDetails(false);
+    }
+  }
+
+  function handleExport() {
+    const rows = filteredRegs;
+    if (!rows || rows.length === 0) return;
+    const headers = ['Registration ID', 'Email / UID', 'Type', 'Status', 'Amount Paid', 'Date'];
+    const csvRows = rows.map(r => {
+      const payment = paymentsLookup?.[r.id];
+      const amountPaid = payment?.status === 'SUCCESS' ? payment.amount : 0;
+      const date = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString() : '';
+      return [
+        `"${r.id}"`,
+        `"${r.email || r.uid || ''}"`,
+        `"${r.type || 'SINGLE'}"`,
+        `"${r.status || ''}"`,
+        `"${amountPaid}"`,
+        `"${date}"`
+      ].join(',');
+    });
+    const csv = [headers.map(h => `"${h}"`).join(','), ...csvRows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'registrations_export.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   function getBadgeColor(status) {
     if (["VERIFIED", "PAYMENT_SUCCESS", "PASS_ISSUED"].includes(status)) return "badge-success";
     if (["REQUIRES_CORRECTION", "REJECTED", "PAYMENT_FAILED"].includes(status)) return "badge-error";
@@ -171,11 +222,11 @@ export default function Registrations() {
     { header: "Account", accessorKey: "email", cell: (r) => <span style={{fontWeight: 500}}>{r.email || r.uid}</span> },
     { header: "Type", accessorKey: "type", cell: (r) => <span className="badge badge-info">{r.type || 'SINGLE'}</span> },
     { header: "Amount", accessorKey: "amount", cell: (r) => {
-        const actualPaid = paymentsLookup?.[r.id]?.amount;
-        if (actualPaid !== undefined && actualPaid !== null && actualPaid !== r.amount) {
-          return <span style={{ color: 'var(--color-gold)' }}>₹{actualPaid}</span>;
+        const payment = paymentsLookup?.[r.id];
+        if (payment && payment.status === 'SUCCESS') {
+          return <span style={{ color: 'var(--color-gold)', fontWeight: 600 }}>₹{payment.amount} (Paid)</span>;
         }
-        return `₹${r.amount || 0}`;
+        return <span style={{ color: 'var(--text-muted)' }}>₹{r.amount || 0} (Unpaid)</span>;
     }},
     { header: "Status", accessorKey: "status", cell: (r) => <span className={`badge ${getBadgeColor(r.status)}`}>{r.status}</span> },
     { header: "Date", accessorKey: "createdAt", cell: (r) => r.createdAt?.toDate().toLocaleDateString() || 'N/A' }
@@ -187,8 +238,8 @@ export default function Registrations() {
         title="Registrations" 
         description="Manage participant registrations and verification workflow." 
         actions={
-          <button className="btn btn-secondary" onClick={refresh}>
-            <Download size={16} /> Export Recent
+          <button className="btn btn-secondary" onClick={handleExport} disabled={!filteredRegs?.length}>
+            <Download size={16} /> Export CSV
           </button>
         }
       />
@@ -322,6 +373,33 @@ export default function Registrations() {
                 <p style={{ color: 'var(--text-muted)' }}>No documents uploaded.</p>
               )}
             </div>
+
+            {/* Admin Override: Generate Pass for VERIFIED registrations */}
+            {selectedReg.status === 'VERIFIED' && passes.length === 0 && (
+              <div className="surface-flat" style={{ padding: '1.25rem', border: '1px solid rgba(255,165,0,0.4)', borderRadius: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', marginBottom: '1rem' }}>
+                  <AlertTriangle size={18} color="orange" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <div style={{ fontWeight: 600, color: 'orange', marginBottom: '0.25rem' }}>Pass Not Generated</div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      This registration is <strong>VERIFIED</strong> but has no passes issued. This usually means payment was received outside the normal flow or the payment webhook failed.
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                      Only click below if you have <strong>manually confirmed payment was received</strong> from this participant.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleGeneratePass}
+                  disabled={loadingDetails}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', justifyContent: 'center' }}
+                >
+                  <Ticket size={16} />
+                  Generate Pass (Admin Override)
+                </button>
+              </div>
+            )}
 
           </div>
         )}

@@ -1,6 +1,6 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const { requirePermission, requireAnyPermission, requireAdmin } = require("../shared/auth");
+const { requirePermission, requireAnyPermission, requireAdmin, requireSuperAdmin } = require("../shared/auth");
 const { createAuditLog, createSecurityEvent } = require("../shared/audit");
 
 let _db; const db = new Proxy({}, { get: (target, prop) => { if (!_db) _db = getFirestore(); const val = _db[prop]; return typeof val === 'function' ? val.bind(_db) : val; }});
@@ -298,7 +298,7 @@ exports.checkInGroupMembersV2 = onCall({ invoker: "public" }, async (request) =>
 });
 
 exports.deleteCheckin = onCall({ invoker: "public" }, async (request) => {
-  const uid = requireAdmin(request);
+  const uid = requireSuperAdmin(request);
   const { checkinId } = request.data;
   
   if (!checkinId) {
@@ -316,25 +316,36 @@ exports.deleteCheckin = onCall({ invoker: "public" }, async (request) => {
 
       const checkinData = checkinSnap.data();
 
-      // Update Participant
+      // ALL READS FIRST
+      let partSnap = null;
+      let partRef = null;
       if (checkinData.participantId) {
-        const partRef = db.collection("participants").doc(checkinData.participantId);
+        partRef = db.collection("participants").doc(checkinData.participantId);
+        partSnap = await t.get(partRef);
+      }
+
+      let regSnap = null;
+      let regRef = null;
+      if (checkinData.registrationId) {
+        regRef = db.collection("registrations").doc(checkinData.registrationId);
+        regSnap = await t.get(regRef);
+      }
+
+      // ALL WRITES AFTER
+      if (partRef && partSnap && partSnap.exists) {
         t.update(partRef, {
           checkInStatus: "NOT_CHECKED_IN",
           updatedAt: FieldValue.serverTimestamp()
         });
       }
 
-      // Update Registration
-      if (checkinData.registrationId) {
-        const regRef = db.collection("registrations").doc(checkinData.registrationId);
+      if (regRef && regSnap && regSnap.exists) {
         t.update(regRef, {
           checkedInCount: FieldValue.increment(-1),
           updatedAt: FieldValue.serverTimestamp()
         });
       }
 
-      // Delete Checkin Document
       t.delete(checkinRef);
 
       return { success: true };

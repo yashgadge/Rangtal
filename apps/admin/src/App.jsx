@@ -13,6 +13,7 @@ const Colleges = React.lazy(() => import('./pages/Colleges'));
 const Passes = React.lazy(() => import('./pages/Passes'));
 const Checkins = React.lazy(() => import('./pages/Checkins'));
 const Participants = React.lazy(() => import('./pages/Participants'));
+const Complimentary = React.lazy(() => import('./pages/Complimentary'));
 const PrintParticipants = React.lazy(() => import('./pages/PrintParticipants'));
 const Verification = React.lazy(() => import('./pages/Verification'));
 const Payments = React.lazy(() => import('./pages/Payments'));
@@ -39,6 +40,13 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/login" />;
   }
   
+  return children;
+};
+
+const SuperAdminRoute = ({ children }) => {
+  const { role, status } = useAuth();
+  if (status === 'INITIALIZING') return null;
+  if (role !== 'SUPER_ADMIN') return <Navigate to="/dashboard" replace />;
   return children;
 };
 
@@ -85,6 +93,11 @@ function AppRoutes() {
         } />
         <Route path="check-ins" element={
           <Suspense fallback={<PageLoader />}><Checkins /></Suspense>
+        } />
+        <Route path="complimentary" element={
+          <SuperAdminRoute>
+            <Suspense fallback={<PageLoader />}><Complimentary /></Suspense>
+          </SuperAdminRoute>
         } />
         <Route path="volunteers" element={
           <Suspense fallback={<PageLoader />}><Volunteers /></Suspense>

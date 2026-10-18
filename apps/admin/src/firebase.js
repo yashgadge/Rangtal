@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { initializeAuth, browserLocalPersistence, browserSessionPersistence, indexedDBLocalPersistence, inMemoryPersistence, connectAuthEmulator } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator, enableIndexedDbPersistence } from 'firebase/firestore';
+import { getFirestore, connectFirestoreEmulator, initializeFirestore, persistentLocalCache } from 'firebase/firestore';
 import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 
@@ -17,8 +17,9 @@ const app = initializeApp(firebaseConfig);
 const auth = initializeAuth(app, {
   persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence]
 });
-const db = getFirestore(app);
-enableIndexedDbPersistence(db).catch(console.error);
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache()
+});
 const functions = getFunctions(app);
 const storage = getStorage(app);
 

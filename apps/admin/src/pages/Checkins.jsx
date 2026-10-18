@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, orderBy, limit, getCountFromServer } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, getCountFromServer } from 'firebase/firestore';
 import { db } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import { motion } from 'framer-motion';
-import { RefreshCw, Users, ShieldCheck, Ticket, Trash2 } from 'lucide-react';
+import { RefreshCw, Users, ShieldCheck, Ticket, RotateCcw } from 'lucide-react';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
 import { functions } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Checkins() {
   const toast = useToast();
+  const { role } = useAuth();
+  const isSuperAdmin = role === 'SUPER_ADMIN';
   const [checkins, setCheckins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -54,7 +57,7 @@ export default function Checkins() {
     setLoading(true);
     setError(null);
     try {
-      const q = query(collection(db, 'checkins'), orderBy('timestamp', 'desc'), limit(100));
+      const q = query(collection(db, 'checkins'), orderBy('timestamp', 'desc'));
       const snap = await getDocs(q);
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setCheckins(data);
@@ -102,32 +105,33 @@ export default function Checkins() {
       accessorKey: "timestamp", 
       cell: (r) => <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{r.timestamp?.toDate().toLocaleString() || 'N/A'}</span> 
     },
-    {
+    ...(isSuperAdmin ? [{
       header: "Actions",
       cell: (r) => (
         <button 
           onClick={async () => {
-            if (!window.confirm('Are you sure you want to delete this check-in? This will allow the pass to be scanned again.')) return;
-            const toastId = toast.loading('Deleting check-in...');
+            if (!window.confirm(`Undo check-in for "${r.participantName || 'this participant'}"?\n\nThis will allow their pass to be scanned again.`)) return;
+            const toastId = toast.loading('Undoing check-in...');
             try {
               const fn = httpsCallable(functions, 'deleteCheckin');
               await fn({ checkinId: r.id });
-              toast.update(toastId, 'success', 'Check-in deleted successfully');
+              toast.update(toastId, 'success', 'Check-in undone successfully');
               fetchCheckins();
               fetchStats();
             } catch (err) {
-              console.error(err);
-              toast.update(toastId, 'error', 'Error deleting check-in', normalizeError(err));
+              console.error('deleteCheckin error:', err?.code, err?.message, err?.details);
+              toast.update(toastId, 'error', 'Error undoing check-in', err?.message || normalizeError(err));
             }
           }}
           className="btn btn-icon"
-          style={{ padding: '0.4rem', color: 'var(--color-error)', background: 'rgba(255,0,0,0.1)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-          title="Delete Check-in"
+          style={{ padding: '0.4rem 0.75rem', color: 'var(--color-error)', background: 'rgba(255,0,0,0.1)', border: '1px solid rgba(255,0,0,0.2)', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}
+          title="Undo Check-in (Super Admin Only)"
         >
-          <Trash2 size={16} />
+          <RotateCcw size={14} />
+          Undo
         </button>
       )
-    }
+    }] : [])
   ];
 
   return (

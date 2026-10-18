@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { collection, query, getDocs, where, limit } from 'firebase/firestore';
+import { collection, query, getDocs, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
@@ -14,8 +14,8 @@ export default function HostelList() {
   const [searchTerm, setSearchTerm] = useState('');
 
   const { data, loading, error } = useFirebaseData('admin_hostel_participants', async () => {
-    // Only get participants where isJspmHostel === 'Yes'
-    const q = query(collection(db, 'participants'), where('isJspmHostel', '==', 'Yes'), limit(2000));
+    // Catch all hostel-positive values: 'Yes' (public form), 'true' (admin/complimentary form)
+    const q = query(collection(db, 'participants'), where('isJspmHostel', 'in', ['Yes', 'true', true]));
     const snap = await getDocs(q);
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   });
@@ -37,13 +37,14 @@ export default function HostelList() {
       return;
     }
     
-    const headers = ['Full Name', 'Gender', 'Mobile Number', 'Building', 'Room', 'Verification Status', 'Check-in Status'];
+    const headers = ['Full Name', 'Gender', 'Mobile Number', 'Building', 'Room', 'Hostel Student', 'Verification Status', 'Check-in Status'];
     const csvData = filteredData.map(p => [
       p.fullName || '',
       p.gender || '',
       p.mobile || p.phoneNumber || p.customFields?.phone_number || p.customFields?.mobile || p.customFields?.phone || '',
       p.hostelBuilding || '',
       p.hostelRoom || '',
+      p.isJspmHostel || 'No',
       p.verificationStatus || 'PENDING',
       p.checkInStatus || 'PENDING'
     ]);

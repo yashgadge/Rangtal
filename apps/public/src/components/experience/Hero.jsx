@@ -185,7 +185,7 @@ export default function Hero() {
               </div>
               <div className="hero-organized-by" style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 <div className="organized-label">ORGANISED BY</div>
-                <div className="organized-val">{organizer || 'JSPM Wagholi Campus'}</div>
+                <div className="organized-val">{organizer || 'Rhythm Rebels'}</div>
               </div>
             </div>
 

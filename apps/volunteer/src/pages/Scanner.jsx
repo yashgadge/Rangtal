@@ -88,7 +88,7 @@ export default function Scanner() {
         if (pass && pass.participantId) {
           participant = participantsData.find(p => p.id === pass.participantId);
         }
-        if (pass && (pass.isGroup || pass.type === 'COUPLE' || pass.type === 'GROUP') && pass.registrationId) {
+        if (pass && pass.isGroup && pass.registrationId) {
           groupParticipants = participantsData.filter(p => p.registrationId === pass.registrationId) || [];
         }
       } else {
@@ -114,7 +114,7 @@ export default function Scanner() {
             if (partSnap.exists()) participant = { id: partSnap.id, ...partSnap.data() };
           }
           
-          if ((pass.isGroup || pass.type === 'COUPLE' || pass.type === 'GROUP') && pass.registrationId) {
+          if (pass.isGroup && pass.registrationId) {
             const qParts = query(collection(db, 'participants'), where('registrationId', '==', pass.registrationId));
             const partsSnap = await getDocs(qParts);
             groupParticipants = partsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -128,7 +128,7 @@ export default function Scanner() {
         return;
       }
 
-      const isGroup = pass.isGroup === true || pass.type === 'COUPLE' || pass.type === 'GROUP';
+      const isGroup = pass.isGroup === true;
       
       let result = {
         isGroup,

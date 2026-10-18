@@ -1,7 +1,7 @@
 {
   "hosting": [
     {
-      "target": "rangtal",
+      "target": "rhythm-rebel",
       "public": "apps/public/dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "headers": [ 
@@ -11,7 +11,7 @@
       "rewrites": [ { "source": "**", "destination": "/index.html" } ]
     },
     {
-      "target": "admin-rangtal",
+      "target": "admin-rhythm-rebel",
       "public": "apps/admin/dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "headers": [ 
@@ -21,7 +21,7 @@
       "rewrites": [ { "source": "**", "destination": "/index.html" } ]
     },
     {
-      "target": "vol-rangtal",
+      "target": "vol-rhythm-rebel",
       "public": "apps/volunteer/dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "headers": [ 

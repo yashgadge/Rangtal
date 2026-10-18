@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, limit, orderBy, doc, getDoc, writeBatch, serverTimestamp, increment, startAfter } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, doc, getDoc, writeBatch, serverTimestamp, increment, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
 import DetailDrawer from '../components/DetailDrawer';
-import { Download, Trash2, CheckCircle, Plus, X, RefreshCw } from 'lucide-react';
+import { Download, Trash2, CheckCircle, Plus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../../../../shared/ui/Toast/ToastProvider.jsx';
 import { normalizeError } from '../../../../shared/utils/errorNormalization.js';
@@ -22,10 +22,11 @@ export default function Participants() {
   const [regLoading, setRegLoading] = useState(false);
   const [selectedCheckin, setSelectedCheckin] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  const [groupMembers, setGroupMembers] = useState([]);
 
   const [showManualModal, setShowManualModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [manualForm, setManualForm] = useState({ fullName: '', packageId: '', gender: 'Male', mobile: '', paymentMethod: 'CASH', email: '' });
+  const [manualForm, setManualForm] = useState({ fullName: '', packageId: '', paymentMethod: 'CASH' });
 
   const { data: packages } = useFirebaseData('admin_packages_active', async () => {
     const snap = await getDocs(query(collection(db, 'packages')));
@@ -53,8 +54,16 @@ export default function Participants() {
         })
         .catch(console.error)
         .finally(() => setRegLoading(false));
+
+      // Fetch ALL group members for this registration directly from Firestore
+      getDocs(query(collection(db, 'participants'), where('registrationId', '==', selectedParticipant.registrationId)))
+        .then(snap => {
+          setGroupMembers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        })
+        .catch(console.error);
     } else {
       setSelectedRegistration(null);
+      setGroupMembers([]);
     }
 
     if (selectedParticipant?.id && passes?.[selectedParticipant.id]?.id) {
@@ -80,26 +89,14 @@ export default function Participants() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [lastDoc, setLastDoc] = useState(null);
-  const [hasMore, setHasMore] = useState(true);
 
-  const fetchParticipants = async (loadMore = false) => {
+  const fetchParticipants = async () => {
     try {
-      if (!loadMore) setLoading(true);
-      let q = query(collection(db, 'participants'), limit(100));
-      if (loadMore && lastDoc) {
-        q = query(collection(db, 'participants'), startAfter(lastDoc), limit(100));
-      }
+      setLoading(true);
+      const q = query(collection(db, 'participants'), orderBy('createdAt', 'desc'));
       const snap = await getDocs(q);
-      
-      if (snap.empty) {
-        setHasMore(false);
-      } else {
-        setLastDoc(snap.docs[snap.docs.length - 1]);
-        const newDocs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setData(prev => loadMore ? [...prev, ...newDocs] : newDocs);
-        if (snap.docs.length < 100) setHasMore(false);
-      }
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => !d.isComplimentary);
+      setData(docs);
     } catch (err) {
       setError(err);
     } finally {
@@ -111,11 +108,7 @@ export default function Participants() {
     fetchParticipants();
   }, []);
 
-  const refresh = () => {
-    setLastDoc(null);
-    setHasMore(true);
-    fetchParticipants(false);
-  };
+  const refresh = () => fetchParticipants();
 
   useEffect(() => {
     if (error) {
@@ -330,7 +323,11 @@ export default function Participants() {
         );
       }
     },
-    { header: "Pass ID", accessorKey: "passId", cell: (r) => <span style={{fontFamily: 'monospace', fontSize: '0.85rem'}}>{passes?.[r.id]?.readableId || (passes?.[r.id] ? passes[r.id].id.slice(0,8).toUpperCase() : 'N/A')}</span> },
+    { 
+      header: "Pass ID", 
+      sortKey: (r) => passes?.[r.id]?.readableId || (passes?.[r.id] ? passes[r.id].id.slice(0,8).toUpperCase() : ''),
+      cell: (r) => <span style={{fontFamily: 'monospace', fontSize: '0.85rem'}}>{passes?.[r.id]?.readableId || (passes?.[r.id] ? passes[r.id].id.slice(0,8).toUpperCase() : 'N/A')}</span> 
+    },
     { header: "Linked Email", accessorKey: "email", sortKey: "email", cell: (r) => <span style={{fontSize: '0.85rem', color: 'var(--text-secondary)'}}>{r.email || 'Legacy'}</span> },
     { header: "College", accessorKey: "collegeId", sortKey: "collegeId", cell: (r) => {
       const cName = colleges ? (colleges[r.collegeId] || r.collegeId) : r.collegeId;
@@ -414,27 +411,14 @@ export default function Participants() {
           onSelectAll={handleSelectAll}
           bulkActions={bulkActions}
           actions={
-            <>
-              {hasMore && (
-                <button 
-                  className="btn btn-secondary" 
-                  onClick={() => fetchParticipants(true)}
-                  disabled={loading}
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginRight: '0.5rem' }}
-                >
-                  <RefreshCw size={16} className={loading ? 'spin' : ''} />
-                  Load More (100)
-                </button>
-              )}
-              <button 
-                className="btn btn-primary" 
-                onClick={() => setShowManualModal(true)}
-                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--color-gold)', color: 'black' }}
-              >
-                <Plus size={16} />
-                On-Spot Registration
-              </button>
-            </>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => setShowManualModal(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'var(--color-gold)', color: 'black' }}
+            >
+              <Plus size={16} />
+              On-Spot Registration
+            </button>
           }
           onRowClick={setSelectedParticipant}
           searchValue={searchTerm}
@@ -580,7 +564,9 @@ export default function Participants() {
             <div className="surface-flat" style={{ padding: '1.25rem' }}>
               <h4 style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '1rem' }}>Group Members (Same Registration)</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {data.filter(p => p.registrationId === selectedParticipant.registrationId).map(member => {
+                {groupMembers.length === 0 ? (
+                  <div style={{ color: 'var(--text-muted)' }}>Loading group members...</div>
+                ) : groupMembers.map(member => {
                   const mName = member.fullName || member.custom_full_name || member.custom_name || 'Participant';
                   const mGender = member.gender || member.custom_gender || 'N/A';
                   return (
@@ -767,35 +753,14 @@ export default function Participants() {
                 <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Full Name *</label>
                 <input type="text" className="form-input" style={{ width: '100%' }} value={manualForm.fullName} onChange={e => setManualForm({...manualForm, fullName: e.target.value})} placeholder="Participant Name" />
               </div>
-              
-              <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Email (Optional)</label>
-                <input type="email" className="form-input" style={{ width: '100%' }} value={manualForm.email} onChange={e => setManualForm({...manualForm, email: e.target.value})} placeholder="Participant Email" />
-              </div>
 
               <div className="form-group" style={{ marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Mobile (Optional)</label>
-                <input type="tel" className="form-input" style={{ width: '100%' }} value={manualForm.mobile} onChange={e => setManualForm({...manualForm, mobile: e.target.value})} placeholder="Phone Number" />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <div className="form-group">
-                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Gender</label>
-                  <select className="form-input" style={{ width: '100%' }} value={manualForm.gender} onChange={e => setManualForm({...manualForm, gender: e.target.value})}>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                
-                <div className="form-group">
-                  <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Payment Method</label>
-                  <select className="form-input" style={{ width: '100%' }} value={manualForm.paymentMethod} onChange={e => setManualForm({...manualForm, paymentMethod: e.target.value})}>
-                    <option value="CASH">Cash</option>
-                    <option value="RAZORPAY">Razorpay / UPI</option>
-                    <option value="COMPLIMENTARY">Complimentary (Free)</option>
-                  </select>
-                </div>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Payment Method</label>
+                <select className="form-input" style={{ width: '100%' }} value={manualForm.paymentMethod} onChange={e => setManualForm({...manualForm, paymentMethod: e.target.value})}>
+                  <option value="CASH">Cash</option>
+                  <option value="RAZORPAY">Razorpay / UPI</option>
+                  <option value="COMPLIMENTARY">Complimentary (Free)</option>
+                </select>
               </div>
 
               <div className="form-group" style={{ marginBottom: '2rem' }}>
@@ -844,7 +809,7 @@ export default function Participants() {
                             
                             toast.update(paymentToast, 'success', 'Registration and Payment Complete!');
                             setShowManualModal(false);
-                            setManualForm({ fullName: '', packageId: '', gender: 'Male', mobile: '', paymentMethod: 'CASH', email: '' });
+                            setManualForm({ fullName: '', packageId: '', paymentMethod: 'CASH' });
                             refresh();
                           } catch (err) {
                             console.error("Verification failed", err);
@@ -853,8 +818,8 @@ export default function Participants() {
                         },
                         prefill: {
                           name: manualForm.fullName,
-                          email: manualForm.email || "onspot@rhythmrebel.com",
-                          contact: manualForm.mobile || ""
+                          email: "onspot@rhythmrebel.com",
+                          contact: ""
                         },
                         theme: { color: "#D4AF37" }
                       };
@@ -868,7 +833,7 @@ export default function Participants() {
                     } else {
                       toast.update(toastId, 'success', `Registration Complete! Pass ID: ${res.data.passId}`);
                       setShowManualModal(false);
-                      setManualForm({ fullName: '', packageId: '', gender: 'Male', mobile: '', paymentMethod: 'CASH', email: '' });
+                      setManualForm({ fullName: '', packageId: '', paymentMethod: 'CASH' });
                       refresh();
                       setIsSubmitting(false);
                     }

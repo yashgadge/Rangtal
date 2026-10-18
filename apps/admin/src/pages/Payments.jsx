@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, orderBy, limit, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import DataTable from '../components/DataTable';
@@ -18,6 +18,7 @@ export default function Payments() {
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [note, setNote] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+
 
   const { data: partsLookup } = useFirebaseData('admin_parts_for_payments', async () => {
     const q = query(collection(db, 'participants'));
@@ -54,9 +55,9 @@ export default function Payments() {
     setLoading(true);
     setError(null);
     try {
-      const q = query(collection(db, 'payments'), orderBy('createdAt', 'desc'), limit(100));
+      const q = query(collection(db, 'payments'), orderBy('createdAt', 'desc'));
       const snap = await getDocs(q);
-      const pData = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const pData = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.method !== 'COMPLIMENTARY');
       setPayments(pData);
     } catch (err) {
       console.error("Error fetching payments", err);
@@ -64,6 +65,10 @@ export default function Payments() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function refresh() {
+    fetchPayments();
   }
 
   const handleForceApprove = async (paymentId) => {
@@ -78,7 +83,7 @@ export default function Payments() {
         alert("Payment force approved successfully.");
         setSelectedPayment(null);
         setNote('');
-        fetchPayments();
+        refresh();
       } else {
         alert("Force approve failed: " + res.data.reason);
       }
@@ -97,7 +102,7 @@ export default function Payments() {
       await deleteDoc(doc(db, 'payments', paymentId));
       alert("Payment record deleted successfully.");
       setSelectedPayment(null);
-      fetchPayments();
+      refresh();
     } catch (err) {
       console.error("Delete payment error", err);
       alert("Error: " + err.message);
@@ -162,6 +167,7 @@ export default function Payments() {
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
           searchPlaceholder="Search recent payments by Payment ID, Name, or Registration ID..."
+
         />
       </div>
 

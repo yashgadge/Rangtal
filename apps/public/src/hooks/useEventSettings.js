@@ -46,7 +46,7 @@ function fetchSettings() {
 const DEFAULT_EVENT = {
   eventName: 'Rangtal Garba Night',
   location: 'JSPM UNIVERSITY GROUND',
-  organizer: 'JSPM Wagholi Campus',
+  organizer: 'Rhythm Rebels',
   timing: '7:00 PM to 12:00 AM\nDaily during Navratri',
   dressCode: 'Traditional Indian\nMandatory'
 };

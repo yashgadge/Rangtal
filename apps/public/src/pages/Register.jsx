@@ -203,8 +203,51 @@ export default function Register() {
 
       // 2. Create Payment Order
       const createOrder = httpsCallable(functions, 'createPaymentOrder');
-      const orderResponse = await createOrder({ registrationId: regId });
+      let orderResponse;
+      try {
+        orderResponse = await createOrder({ registrationId: regId });
+      } catch (err) {
+        if (err.message && err.message.includes('PASS_ISSUED')) {
+          toast.dismiss(toastId);
+          toast.success("Pass already issued!", "Redirecting to your dashboard...");
+          window.__isNavigatingAway = true;
+          navigate('/account');
+          return;
+        }
+        throw err;
+      }
       const orderData = orderResponse.data;
+
+      // Handle Free Passes
+      if (orderData.amount === 0) {
+        toast.dismiss(toastId);
+        const verifyingToast = toast.loading('Generating pass...', 'Issuing your complimentary/free pass');
+        setProcessingStatus({ title: 'Generating Pass...', desc: 'Securing your transaction' });
+        try {
+          const verifyPayment = httpsCallable(functions, 'verifyPayment');
+          await verifyPayment({
+            paymentId: orderData.paymentId,
+            gatewayPaymentId: 'FREE_PASS',
+            gatewaySignature: 'FREE_PASS'
+          });
+
+          const generatePass = httpsCallable(functions, 'generatePass');
+          generatePass({ registrationId: regId }).catch(e => console.log("Background pass generation:", e));
+
+          toast.update(verifyingToast, 'success', 'Registration Successful!', 'Redirecting to your dashboard...');
+          setProcessingStatus({ title: 'Success!', desc: 'Redirecting to your dashboard...' });
+          invalidateCache();
+          window.__isNavigatingAway = true;
+          navigate('/account');
+        } catch (err) {
+          console.error("Free pass generation failed", err);
+          toast.update(verifyingToast, 'error', 'Registration Failed', normalizeError(err));
+          setError("Failed to generate free pass.");
+          setSubmitting(false);
+          setProcessingStatus(null);
+        }
+        return;
+      }
 
       toast.dismiss(toastId);
       setProcessingStatus(null); // Clear overlay while Razorpay is open
@@ -526,9 +569,7 @@ export default function Register() {
                           ...(eventSettings?.REGISTRATION?.allowOtherCollege ? [{ value: 'OTHER', label: 'Other (Not Listed)' }] : [])
                         ]}
                       />
-                      <div style={{ marginTop: '0.6rem', fontSize: '0.75rem', color: 'rgba(239, 68, 68, 0.8)', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 500 }}>
-                        <AlertCircle size={12} /> College Pass-out students are strictly not allowed.
-                      </div>
+
                     </div>
                     
                     {participants[currentParticipantIndex]?.collegeId === 'OTHER' && (

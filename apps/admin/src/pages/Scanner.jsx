@@ -146,7 +146,7 @@ export default function Scanner() {
       const pass = { id: passDoc.id, ...passDoc.data() };
       
       // 2. Fetch Participant(s)
-      const isGroup = pass.isGroup === true || pass.type === 'COUPLE' || pass.type === 'GROUP';
+      const isGroup = pass.isGroup === true;
       
       let participant = null;
       let groupParticipants = [];

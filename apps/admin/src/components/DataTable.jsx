@@ -18,7 +18,8 @@ export default function DataTable({
   selectedIds = new Set(),
   onSelectRow,
   onSelectAll,
-  bulkActions
+  bulkActions,
+  displayTotal
 }) {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [pageSize, setPageSize] = useState(15);
@@ -131,7 +132,7 @@ export default function DataTable({
           </div>
           
           <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-            Total: {data?.length || 0}
+            Total: {displayTotal !== undefined ? displayTotal : (data?.length || 0)}
           </div>
           
           {exportable && data?.length > 0 && (

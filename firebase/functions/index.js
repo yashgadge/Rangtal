@@ -6,7 +6,7 @@ setGlobalOptions({ maxInstances: 100, concurrency: 80, memory: "512MiB", timeout
 
 // Initialize Firebase Admin once
 initializeApp({
-  storageBucket: "rhythm-rebel.appspot.com"
+  storageBucket: "rhythm-rebel.firebasestorage.app"
 });
 
 // API Exports

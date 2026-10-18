@@ -3,24 +3,28 @@ import { collection, query, getDocs, getCountFromServer, where, orderBy, limit }
 import { db } from '../firebase';
 import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
-import { Users, Ticket, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { Users, Ticket, CheckCircle, Clock, AlertCircle, IndianRupee } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useFirebaseData } from '../../../../shared/hooks/useFirebaseData.js';
 
 export default function Dashboard() {
   const { data: stats, loading: statsLoading, error: statsError } = useFirebaseData('dashboard_stats', async () => {
-    const [regSnap, verifiedSnap, passSnap, checkinSnap] = await Promise.all([
+    const [regSnap, verifiedSnap, passSnap, checkinSnap, paymentsSnap] = await Promise.all([
       getCountFromServer(collection(db, 'registrations')),
       getCountFromServer(query(collection(db, 'registrations'), where('verificationStatus', '==', 'VERIFIED'))),
       getCountFromServer(collection(db, 'passes')),
-      getCountFromServer(collection(db, 'checkins'))
+      getCountFromServer(collection(db, 'checkins')),
+      getDocs(query(collection(db, 'payments'), where('status', '==', 'SUCCESS')))
     ]);
+
+    const totalRevenue = paymentsSnap.docs.reduce((acc, doc) => acc + (doc.data().amount || 0), 0);
 
     return {
       totalRegistrations: regSnap.data().count,
       verifiedParticipants: verifiedSnap.data().count,
       passesIssued: passSnap.data().count,
       checkIns: checkinSnap.data().count,
+      totalRevenue
     };
   });
 
@@ -79,6 +83,12 @@ export default function Dashboard() {
                 value={stats?.checkIns || 0} 
                 icon={Clock} 
                 color="var(--color-info)"
+              />
+              <StatCard 
+                title="Total Collection" 
+                value={`₹${stats?.totalRevenue || 0}`} 
+                icon={IndianRupee} 
+                color="#00E676"
               />
             </>
           )}

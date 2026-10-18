@@ -249,6 +249,7 @@ exports.adminCreateOnSpotRegistration = onCall({ invoker: "public" }, async (req
         status: regStatus,
         amount: packageData.price || 0,
         paymentId: paymentRef.id,
+        isOnSpot: true,
         createdAt: timestamp,
         updatedAt: timestamp
       });
@@ -299,9 +300,13 @@ exports.adminCreateOnSpotRegistration = onCall({ invoker: "public" }, async (req
         secureCode: secureCode,
         registrationId: regRef.id,
         participantId: partRef.id,
+        participantName: fullName,
+        participantMobile: mobile || '',
         uid: uid,
         type: packageData.type || "SINGLE",
+        regType: packageData.name,
         isGroup: false,
+        isOnSpot: true,
         status: "ACTIVE",
         createdAt: timestamp,
         updatedAt: timestamp

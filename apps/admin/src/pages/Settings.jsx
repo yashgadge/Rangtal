@@ -94,6 +94,7 @@ export default function Settings() {
     { id: 'REGISTRATION', label: 'Registration' },
     { id: 'VERIFICATION', label: 'Verification' },
     { id: 'HOSTEL', label: 'Hostel Settings' },
+    { id: 'PASSES_DISPLAY', label: 'Passes Display' },
     { id: 'PAYMENT', label: 'Payment (Deferred)' }
   ];
 
@@ -408,6 +409,43 @@ export default function Settings() {
                         </div>
                       );
                     })()}
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'PASSES_DISPLAY' && (
+                <div className="surface" style={{ padding: '2rem' }}>
+                  <h3 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>Passes Display Override</h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
+                    When enabled, the "Total" count shown on the Passes page will display your custom number instead of the actual count. Pagination and all data remain unaffected.
+                  </p>
+
+                  <div className="surface-flat" style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+                    <div>
+                      <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>Enable Override</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Show custom number instead of actual pass count.</div>
+                    </div>
+                    <label style={{ cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={settings.PASSES_DISPLAY?.enabled || false}
+                        onChange={e => handleNestedChange('PASSES_DISPLAY', 'enabled', e.target.checked)}
+                        style={{ width: '20px', height: '20px', accentColor: 'var(--color-gold)' }}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Custom Display Number</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={settings.PASSES_DISPLAY?.count || ''}
+                      placeholder="e.g. 410"
+                      disabled={!settings.PASSES_DISPLAY?.enabled}
+                      onChange={e => handleNestedChange('PASSES_DISPLAY', 'count', Number(e.target.value))}
+                      style={{ opacity: settings.PASSES_DISPLAY?.enabled ? 1 : 0.4 }}
+                    />
                   </div>
                 </div>
               )}

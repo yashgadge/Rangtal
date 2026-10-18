@@ -1,4 +1,7 @@
 import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { auth } from '../firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import Hero from '../components/experience/Hero.jsx';
 import EventInfo from '../components/experience/EventInfo.jsx';
 import Passes from '../components/experience/Passes.jsx';
@@ -7,6 +10,16 @@ import { motion, useScroll, useTransform } from 'framer-motion';
 
 export default function Home() {
   const { scrollY } = useScroll();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        navigate('/account');
+      }
+    });
+    return () => unsubscribe();
+  }, [navigate]);
   
   // Parallax effects for background layers
   const bg1Y = useTransform(scrollY, [0, 1000], [0, 150]);

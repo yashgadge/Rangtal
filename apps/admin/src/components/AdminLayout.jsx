@@ -31,7 +31,8 @@ const navSectionsConfig = [
       { path: '/scanner', label: 'Scanner', icon: ScanLine, perm: 'SCAN_PASS' },
       { path: '/payments', label: 'Payments', icon: CreditCard, perm: 'PAYMENTS' },
       { path: '/passes', label: 'Passes', icon: Ticket, perm: 'PASSES' },
-      { path: '/check-ins', label: 'Check-ins', icon: CheckCircle, perm: 'CHECKINS' }
+      { path: '/check-ins', label: 'Check-ins', icon: CheckCircle, perm: 'CHECKINS' },
+      { path: '/complimentary', label: 'Complimentary', icon: Ticket, perm: 'SUPER_ADMIN_ONLY' }
     ]
   },
   {
